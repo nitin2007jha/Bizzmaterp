@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -51,6 +52,8 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.RequestQuote
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Inventory2
@@ -142,6 +145,9 @@ fun ErpTopBar(
     notificationCount: Int,
     trashCount: Int,
     userInitials: String,
+    isPrivacyMode: Boolean = false,
+    onTogglePrivacy: () -> Unit = {},
+    onOpenCalculator: () -> Unit = {},
     onBack: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenTrash: () -> Unit,
@@ -210,6 +216,32 @@ fun ErpTopBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+
+            IconButton(
+                onClick = onOpenCalculator,
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .testTag("topbar_calculator_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Calculate,
+                    contentDescription = "Quick Calculator",
+                    tint = Color.White
+                )
+            }
+
+            IconButton(
+                onClick = onTogglePrivacy,
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .testTag("topbar_privacy_button")
+            ) {
+                Icon(
+                    imageVector = if (isPrivacyMode) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (isPrivacyMode) "Show amounts" else "Hide amounts",
+                    tint = Color.White
+                )
             }
 
             IconButton(

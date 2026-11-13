@@ -6,6 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -54,6 +61,7 @@ import com.example.ui.components.GlobalSearchSheet
 import com.example.ui.components.MoreModulesSheet
 import com.example.ui.components.NotificationsSheet
 import com.example.ui.components.PinLockGate
+import com.example.ui.components.QuickCalculatorSheet
 import com.example.ui.screens.AccountSetupScreen
 import com.example.ui.screens.AiBusinessReportScreen
 import com.example.ui.screens.AppointmentsScreen
@@ -68,6 +76,7 @@ import com.example.ui.screens.DaybookScreen
 import com.example.ui.screens.EmployeesScreen
 import com.example.ui.screens.ExpensesScreen
 import com.example.ui.screens.FinancialReportsScreen
+import com.example.ui.screens.GrowthHubScreen
 import com.example.ui.screens.GstCenterScreen
 import com.example.ui.screens.InventoryScreen
 import com.example.ui.screens.InvoiceBuilderScreen
@@ -191,6 +200,8 @@ private fun MainErpApp(
     var showAriaSheet by remember { mutableStateOf(false) }
     var showSearchSheet by remember { mutableStateOf(false) }
     var showNotificationsSheet by remember { mutableStateOf(false) }
+    var showCalcSheet by remember { mutableStateOf(false) }
+    var isPrivacyMode by rememberSaveable { mutableStateOf(false) }
     var confettiTrigger by remember { mutableIntStateOf(0) }
     var pinUnlocked by rememberSaveable { mutableStateOf(false) }
 
@@ -273,6 +284,9 @@ private fun MainErpApp(
                                 notificationCount = uiState.notifications.size,
                                 trashCount = trashCount,
                                 userInitials = userInitials,
+                                isPrivacyMode = isPrivacyMode,
+                                onTogglePrivacy = { isPrivacyMode = !isPrivacyMode },
+                                onOpenCalculator = { showCalcSheet = true },
                                 onBack = {
                                     editingInvoice = null
                                     currentRoute = "dashboard"
@@ -341,10 +355,19 @@ private fun MainErpApp(
                                     CircularProgressIndicator(color = TealPrimary)
                                 }
                             } else {
-                                when (currentRoute) {
+                                AnimatedContent(
+                                    targetState = currentRoute,
+                                    transitionSpec = {
+                                        (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 16 })
+                                            .togetherWith(fadeOut(tween(180)) + slideOutHorizontally(tween(180)) { -it / 16 })
+                                    },
+                                    label = "erp_route_transition"
+                                ) { targetRoute ->
+                                when (targetRoute) {
                                     "dashboard" -> DashboardScreen(
                                         state = uiState,
                                         dashFilter = dashFilter,
+                                        isPrivacyMode = isPrivacyMode,
                                         onSelectFilter = viewModel::setDashFilter,
                                         onOpenSearch = { showSearchSheet = true },
                                         onNavigate = {
@@ -374,6 +397,19 @@ private fun MainErpApp(
                                                 dateStr = FormatUtils.todayStr(),
                                                 paidAmount = 0.0,
                                                 status = "pending",
+                                                createdAt = null
+                                            )
+                                            currentRoute = "invoice"
+                                        },
+                                        onConvertToInvoice = { inv ->
+                                            editingInvoice = inv.copy(
+                                                id = "",
+                                                invoiceNumber = "",
+                                                docType = "invoice",
+                                                status = "final",
+                                                dateStr = FormatUtils.todayStr(),
+                                                paidAmount = 0.0,
+                                                paymentStatus = "unpaid",
                                                 createdAt = null
                                             )
                                             currentRoute = "invoice"
@@ -525,6 +561,11 @@ private fun MainErpApp(
                                             signOutFromErp(credentialManager, scope)
                                         }
                                     )
+                                    "growth-hub" -> GrowthHubScreen(
+                                        state = uiState,
+                                        onCreateAutoPo = viewModel::savePurchaseOrder,
+                                        onMessage = { viewModel.emitToast(it) }
+                                    )
                                     "recycle-bin" -> RecycleBinScreen(
                                         state = uiState,
                                         onRestoreInvoice = { viewModel.softDeleteInvoice(it, false) },
@@ -536,6 +577,7 @@ private fun MainErpApp(
                                         onRestoreExpense = { viewModel.softDeleteExpense(it, false) },
                                         onPurgeExpense = { viewModel.permanentlyDelete("expenses", it) }
                                     )
+                                }
                                 }
                             }
                         }
@@ -591,6 +633,13 @@ private fun MainErpApp(
             }
         )
     }
+
+    if (showCalcSheet) {
+        QuickCalculatorSheet(
+            onCopyResult = { viewModel.emitToast(it) },
+            onDismiss = { showCalcSheet = false }
+        )
+    }
 }
 
 private fun routeTitle(route: String): String = when (route) {
@@ -612,6 +661,7 @@ private fun routeTitle(route: String): String = when (route) {
     "ai-report" -> "AI Business Advisor"
     "ca-portal" -> "CA Portal"
     "tools" -> "Business Tools Hub"
+    "growth-hub" -> "UPI & Growth Hub"
     "website" -> "Online Storefront"
     "data-module" -> "Backup & Import"
     "settings" -> "Account & Settings"

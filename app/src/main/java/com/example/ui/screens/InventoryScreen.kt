@@ -83,7 +83,7 @@ fun InventoryScreen(
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
-    var lowStockOnly by remember { mutableStateOf(false) }
+    var stockFilter by remember { mutableStateOf("all") }
     var editingProduct by remember { mutableStateOf<ErpProduct?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showBarcodeDialog by remember { mutableStateOf(false) }
@@ -106,12 +106,22 @@ fun InventoryScreen(
             .sorted()
     }
 
-    val list = remember(state.products, servicesOnly, query, selectedCategory, lowStockOnly) {
+    val today = remember { FormatUtils.todayStr() }
+    val soonDate = remember(today) { FormatUtils.addDaysToDateStr(today, 30) }
+
+    val list = remember(state.products, servicesOnly, query, selectedCategory, stockFilter, soonDate) {
         val q = query.trim().lowercase()
         state.products
             .filter { !it.isDeleted && it.isService == servicesOnly }
             .filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
-            .filter { !lowStockOnly || (!it.isService && it.stock <= it.lowStockThreshold) }
+            .filter {
+                when (stockFilter) {
+                    "low" -> !it.isService && it.stock <= it.lowStockThreshold
+                    "out" -> !it.isService && it.stock <= 0.0
+                    "expiring" -> !it.isService && it.expiryDate.isNotBlank() && it.expiryDate <= soonDate
+                    else -> true
+                }
+            }
             .filter { p ->
                 q.isBlank() ||
                     p.name.lowercase().contains(q) ||
@@ -185,14 +195,25 @@ fun InventoryScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilterChip(
-                        selected = lowStockOnly,
-                        onClick = { lowStockOnly = !lowStockOnly },
-                        label = { Text("Low Stock Only") },
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = DangerRed, selectedLabelColor = Color.White),
-                        modifier = Modifier.testTag("inventory_low_stock_chip")
-                    )
-                    Text("Valuation: ${FormatUtils.inr(stockVal)}", style = MaterialTheme.typography.titleSmall, color = TealPrimary)
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(listOf("all" to "All", "low" to "Low Stock", "out" to "Out of Stock", "expiring" to "Expiring Soon")) { (k, lbl) ->
+                            FilterChip(
+                                selected = stockFilter == k,
+                                onClick = { stockFilter = if (stockFilter == k && k != "all") "all" else k },
+                                label = { Text(lbl) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = if (k == "all") TealPrimary else DangerRed,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("inventory_filter_$k")
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("Val: ${FormatUtils.inr(stockVal)}", style = MaterialTheme.typography.titleSmall, color = TealPrimary)
                 }
             }
 

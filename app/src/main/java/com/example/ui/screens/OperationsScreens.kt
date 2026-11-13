@@ -363,12 +363,15 @@ fun BranchesScreen(state: ErpUiState, onSaveBranch: (ErpBranch) -> Unit) {
             }
             LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.branches, key = { it.id }) { br ->
+                    val branchInvs = state.invoices.filter { !it.isDeleted && it.status == "final" && it.branchId == br.id }
+                    val branchRev = branchInvs.sumOf { it.grandTotal }
                     Card(onClick = { editing = br }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(br.name, style = MaterialTheme.typography.titleMedium)
                                 Text("${br.manager.ifBlank { "No manager" }} • ${br.phone}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (br.address.isNotBlank()) Text(br.address, style = MaterialTheme.typography.bodySmall)
+                                ErpStatusBadge("${branchInvs.size} bills • ${FormatUtils.inr(branchRev)}", SuccessSoft, SuccessGreen)
                             }
                             Switch(checked = br.isActive, onCheckedChange = { onSaveBranch(br.copy(isActive = it)) })
                         }

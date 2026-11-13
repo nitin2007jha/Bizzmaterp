@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storefront
@@ -68,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.FormatUtils
+import com.example.ui.components.AnimatedRupeeText
 import com.example.ui.components.ErpStatusBadge
 import com.example.ui.components.HealthScoreRing
 import com.example.ui.components.PaymentDonutChart
@@ -92,6 +94,7 @@ import com.example.ui.viewmodel.ErpUiState
 fun DashboardScreen(
     state: ErpUiState,
     dashFilter: String,
+    isPrivacyMode: Boolean = false,
     onSelectFilter: (String) -> Unit,
     onOpenSearch: () -> Unit,
     onNavigate: (String) -> Unit,
@@ -175,10 +178,43 @@ fun DashboardScreen(
                         }
                     }
 
+                    val todayStr = remember { FormatUtils.todayStr() }
+                    val overdueCount = remember(activeInvoices, todayStr) {
+                        activeInvoices.count {
+                            it.paymentStatus != "paid" && it.dueDateStr.isNotBlank() && it.dueDateStr < todayStr
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${FormatUtils.greetingByHour()}, ${state.settings.ownerName.ifBlank { "Partner" }}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        if (overdueCount > 0) {
+                            Surface(
+                                onClick = { onNavigate("growth-hub") },
+                                color = DangerSoft,
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    text = "$overdueCount Overdue",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DangerRed,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+
                     val quickShortcuts = remember(state.settings.enabledModules) {
                         val all = listOf(
                             Triple("invoice", "New Bill", Icons.AutoMirrored.Filled.ReceiptLong),
                             Triple("pos", "Quick POS", Icons.Default.PointOfSale),
+                            Triple("growth-hub", "UPI & Growth", Icons.Default.QrCode2),
                             Triple("expenses", "Expense", Icons.Default.RequestQuote),
                             Triple("gst", "GST Filing", Icons.Default.AccountBalance),
                             Triple("daybook", "Daybook", Icons.Default.Book),
@@ -238,8 +274,9 @@ fun DashboardScreen(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = TealMint
                                     )
-                                    Text(
-                                        text = FormatUtils.inr(s.netProfit),
+                                    AnimatedRupeeText(
+                                        amount = s.netProfit,
+                                        masked = isPrivacyMode,
                                         style = MaterialTheme.typography.displaySmall,
                                         color = Color.White
                                     )
@@ -263,17 +300,17 @@ fun DashboardScreen(
                             ) {
                                 HeroStatChip(
                                     label = "Revenue",
-                                    value = FormatUtils.inr(s.totalRevenue),
+                                    value = FormatUtils.inr(s.totalRevenue, masked = isPrivacyMode),
                                     modifier = Modifier.weight(1f)
                                 )
                                 HeroStatChip(
                                     label = "Expenses",
-                                    value = FormatUtils.inr(s.totalExpenses),
+                                    value = FormatUtils.inr(s.totalExpenses, masked = isPrivacyMode),
                                     modifier = Modifier.weight(1f)
                                 )
                                 HeroStatChip(
                                     label = "Today",
-                                    value = FormatUtils.inr(s.todayRevenue),
+                                    value = FormatUtils.inr(s.todayRevenue, masked = isPrivacyMode),
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -319,7 +356,7 @@ fun DashboardScreen(
                             )
                         }
                         Text(
-                            text = FormatUtils.inr(s.unpaidAmount),
+                            text = FormatUtils.inr(s.unpaidAmount, masked = isPrivacyMode),
                             style = MaterialTheme.typography.titleMedium,
                             color = if (s.unpaidAmount > 0) WarningAmber else EmeraldAccent
                         )

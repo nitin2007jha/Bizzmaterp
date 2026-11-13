@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.Search
@@ -123,6 +124,7 @@ val allModuleTiles = listOf(
     ModuleTileSpec("reports", "Reports & P&L", Icons.AutoMirrored.Filled.TrendingUp, TealPrimary),
     ModuleTileSpec("ai-report", "AI Advisor", Icons.Default.AutoAwesome, PurpleAccent),
     ModuleTileSpec("tools", "Business Tools", Icons.Default.Build, WarningAmber),
+    ModuleTileSpec("growth-hub", "UPI & Growth Hub", Icons.Default.QrCode2, EmeraldAccent),
     ModuleTileSpec("website", "Online Store", Icons.Default.Storefront, EmeraldAccent),
     ModuleTileSpec("branches", "Branches", Icons.Default.Business, IndigoAccent),
     ModuleTileSpec("employees", "Employees", Icons.Default.Badge, TealPrimary),

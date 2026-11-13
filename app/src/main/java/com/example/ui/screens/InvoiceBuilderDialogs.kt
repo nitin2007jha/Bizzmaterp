@@ -145,8 +145,13 @@ fun ClientPickerSheet(
                             )
                             OutlinedTextField(
                                 value = newGstin,
-                                onValueChange = { newGstin = it.uppercase() },
-                                label = { Text("GSTIN") },
+                                onValueChange = {
+                                    newGstin = it.uppercase()
+                                    FormatUtils.decodeGstinState(newGstin)?.let { decoded ->
+                                        if (newState.isBlank()) newState = decoded
+                                    }
+                                },
+                                label = { Text("GSTIN (auto state)") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
@@ -418,6 +423,26 @@ fun LineItemEditorDialog(
                             selected = gst == slab,
                             onClick = { gst = slab },
                             label = { Text("$slab%") }
+                        )
+                    }
+                }
+                Text("Quick HSN / SAC Presets:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        Triple("998314", "IT/Software", "18"),
+                        Triple("8471", "Laptop/Hardware", "18"),
+                        Triple("8517", "Phones", "18"),
+                        Triple("9963", "Food/Service", "5"),
+                        Triple("3004", "Pharma", "12")
+                    ).forEach { (code, tag, slab) ->
+                        FilterChip(
+                            selected = hsn == code,
+                            onClick = {
+                                hsn = code
+                                gst = slab
+                                if (code.startsWith("99")) isService = true
+                            },
+                            label = { Text("$code ($tag)") }
                         )
                     }
                 }

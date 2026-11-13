@@ -2,6 +2,7 @@ package com.example.core
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.example.data.model.BusinessSettings
 import com.example.data.model.ErpInvoice
@@ -20,13 +21,48 @@ object FormatUtils {
         minimumFractionDigits = 0
     }
 
-    fun inr(amount: Double): String {
+    private val gstinStateMap = mapOf(
+        "01" to "Jammu & Kashmir", "02" to "Himachal Pradesh", "03" to "Punjab",
+        "04" to "Chandigarh", "05" to "Uttarakhand", "06" to "Haryana",
+        "07" to "Delhi", "08" to "Rajasthan", "09" to "Uttar Pradesh",
+        "10" to "Bihar", "11" to "Sikkim", "12" to "Arunachal Pradesh",
+        "13" to "Nagaland", "14" to "Manipur", "15" to "Mizoram",
+        "16" to "Tripura", "17" to "Meghalaya", "18" to "Assam",
+        "19" to "West Bengal", "20" to "Jharkhand", "21" to "Odisha",
+        "22" to "Chhattisgarh", "23" to "Madhya Pradesh", "24" to "Gujarat",
+        "26" to "Dadra & Nagar Haveli and Daman & Diu", "27" to "Maharashtra",
+        "29" to "Karnataka", "30" to "Goa", "31" to "Lakshadweep",
+        "32" to "Kerala", "33" to "Tamil Nadu", "34" to "Puducherry",
+        "35" to "Andaman & Nicobar", "36" to "Telangana", "37" to "Andhra Pradesh",
+        "38" to "Ladakh"
+    )
+
+    fun inr(amount: Double, masked: Boolean = false): String {
+        if (masked) return "₹ •••••"
         val safe = if (amount.isNaN() || amount.isInfinite()) 0.0 else amount
         return try {
             currencyFmt.format(safe)
         } catch (_: Exception) {
             "₹${safe.roundToLong()}"
         }
+    }
+
+    fun decodeGstinState(gstin: String): String? {
+        val clean = gstin.trim().uppercase()
+        if (clean.length < 2) return null
+        return gstinStateMap[clean.substring(0, 2)]
+    }
+
+    fun isValidGstin(gstin: String): Boolean {
+        val clean = gstin.trim().uppercase()
+        return Regex("^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$").matches(clean)
+    }
+
+    fun greetingByHour(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "Good Morning"
+        in 12..16 -> "Good Afternoon"
+        in 17..21 -> "Good Evening"
+        else -> "Late Shift"
     }
 
     fun todayStr(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -67,6 +103,34 @@ object FormatUtils {
             else -> twoDigits(num.toInt())
         }
         return "Rupees ${convert(n)} Only"
+    }
+
+    fun buildUpiUri(upiId: String, payeeName: String, amount: Double, note: String): String {
+        val builder = Uri.Builder()
+            .scheme("upi")
+            .authority("pay")
+            .appendQueryParameter("pa", upiId.trim())
+            .appendQueryParameter("pn", payeeName.ifBlank { "My Business" }.trim())
+            .appendQueryParameter("cu", "INR")
+        if (amount > 0.0) {
+            builder.appendQueryParameter("am", String.format(Locale.US, "%.2f", amount))
+        }
+        if (note.isNotBlank()) {
+            builder.appendQueryParameter("tn", note.trim().take(60))
+        }
+        return builder.build().toString()
+    }
+
+    fun launchUpiPayment(
+        context: Context,
+        upiId: String,
+        payeeName: String,
+        amount: Double,
+        note: String
+    ): Result<Unit> = runCatching {
+        require(upiId.isNotBlank()) { "Add your UPI ID in Settings first." }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(buildUpiUri(upiId, payeeName, amount, note)))
+        context.startActivity(Intent.createChooser(intent, "Pay with UPI"))
     }
 
     fun shareText(context: Context, subject: String, text: String) {

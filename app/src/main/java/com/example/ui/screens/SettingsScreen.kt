@@ -77,6 +77,7 @@ private val allModuleSpecs = listOf(
     "ai-report" to "AI Business Advisor",
     "ca-portal" to "CA Portal",
     "tools" to "Business Tools Hub",
+    "growth-hub" to "UPI & Growth Hub",
     "website" to "Online Storefront",
     "data-module" to "Backup & Import"
 )

@@ -68,6 +68,7 @@ import com.example.data.model.ErpInvoice
 import com.example.data.model.InvoiceTemplates
 import com.example.ui.components.ErpStatusBadge
 import com.example.ui.components.SwipeActionCard
+import com.example.ui.components.UpiPaymentQrCard
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DangerSoft
 import com.example.ui.theme.EmeraldAccent
@@ -86,6 +87,7 @@ fun RecordsScreen(
     onNewInvoice: () -> Unit,
     onEditInvoice: (ErpInvoice) -> Unit,
     onDuplicateInvoice: (ErpInvoice) -> Unit = {},
+    onConvertToInvoice: (ErpInvoice) -> Unit = {},
     onMarkPaid: (ErpInvoice) -> Unit,
     onSoftDelete: (ErpInvoice) -> Unit,
     onSharePdfError: (String) -> Unit
@@ -104,7 +106,10 @@ fun RecordsScreen(
                     "paid" -> inv.status == "final" && inv.paymentStatus == "paid"
                     "unpaid" -> inv.status == "final" && inv.paymentStatus != "paid"
                     "draft" -> inv.status == "draft"
-                    "other_docs" -> inv.docType != "invoice"
+                    "quotation" -> inv.docType == "quotation"
+                    "proforma" -> inv.docType == "proforma"
+                    "challan" -> inv.docType == "challan"
+                    "credit_note" -> inv.docType == "credit_note"
                     else -> true
                 }
             }
@@ -159,7 +164,10 @@ fun RecordsScreen(
                     "paid" to "Paid",
                     "unpaid" to "Pending",
                     "draft" to "Drafts",
-                    "other_docs" to "Quotes & Docs"
+                    "quotation" to "Quotations",
+                    "proforma" to "Proforma",
+                    "challan" to "Challans",
+                    "credit_note" to "Credit Notes"
                 )
                 items(chips) { (key, label) ->
                     FilterChip(
@@ -285,6 +293,10 @@ fun RecordsScreen(
                 selectedInvoice = null
                 onDuplicateInvoice(inv)
             },
+            onConvertToInvoice = {
+                selectedInvoice = null
+                onConvertToInvoice(inv)
+            },
             onDelete = {
                 onSoftDelete(inv)
                 selectedInvoice = null
@@ -302,7 +314,8 @@ fun RecordsScreen(
                 val upiLine = if (state.settings.upiId.isNotBlank()) "\nPay via UPI: ${state.settings.upiId}" else ""
                 val msg = "Hello ${inv.clientName.ifBlank { "Customer" }},\nInvoice #${inv.invoiceNumber} dated ${inv.dateStr} for ${FormatUtils.inr(inv.grandTotal)} (${if (bal > 0) "Balance due: ${FormatUtils.inr(bal)}" else "Paid"}).$upiLine\n— ${state.settings.businessName}"
                 FormatUtils.shareText(context, "Invoice ${inv.invoiceNumber}", msg)
-            }
+            },
+            onUpiMessage = onSharePdfError
         )
     }
 }
@@ -316,10 +329,12 @@ fun InvoiceDetailSheet(
     onMarkPaid: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
+    onConvertToInvoice: () -> Unit = {},
     onDelete: () -> Unit,
     onPrint: () -> Unit,
     onExportPdf: () -> Unit,
-    onShareReminder: () -> Unit
+    onShareReminder: () -> Unit,
+    onUpiMessage: (String) -> Unit = {}
 ) {
     val tpl = InvoiceTemplates.byId(invoice.templateId.ifBlank { settings.invoiceTemplate })
 
@@ -423,6 +438,27 @@ fun InvoiceDetailSheet(
                             Text(FormatUtils.inr(invoice.grandTotal), style = MaterialTheme.typography.titleLarge, color = tpl.primaryColor)
                         }
                     }
+                }
+            }
+
+            if (invoice.paymentStatus != "paid" && settings.upiId.isNotBlank()) {
+                val due = (invoice.grandTotal - invoice.paidAmount).coerceAtLeast(0.0)
+                UpiPaymentQrCard(
+                    upiId = settings.upiId,
+                    payeeName = settings.businessName,
+                    amount = due,
+                    note = "${invoice.invoiceNumber} ${invoice.clientName}".trim(),
+                    onResultMessage = onUpiMessage
+                )
+            }
+
+            if (invoice.docType == "quotation" || invoice.docType == "proforma") {
+                Button(
+                    onClick = onConvertToInvoice,
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    modifier = Modifier.fillMaxWidth().testTag("invoice_detail_convert_button")
+                ) {
+                    Text("Convert ${invoice.docType.replaceFirstChar { it.uppercase() }} → Tax Invoice")
                 }
             }
 
