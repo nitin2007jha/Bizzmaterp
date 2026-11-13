@@ -326,6 +326,9 @@ private fun PosProductTile(
     onAdd: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val remaining = (product.stock - qty).coerceAtLeast(0.0)
+    val isOut = !product.isService && remaining <= 0.0
+    val isLow = !product.isService && remaining > 0.0 && remaining <= product.lowStockThreshold
     Card(
         onClick = onAdd,
         shape = RoundedCornerShape(16.dp),
@@ -341,9 +344,24 @@ private fun PosProductTile(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 ErpStatusBadge(
-                    if (product.isService) "SERVICE" else "${product.stock.toInt()} ${product.unit}",
-                    MaterialTheme.colorScheme.surfaceVariant,
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    label = when {
+                        product.isService -> "SERVICE"
+                        isOut -> "OUT (0)"
+                        isLow -> "LOW ${remaining.toInt()} ${product.unit}"
+                        else -> "${remaining.toInt()} ${product.unit}"
+                    },
+                    containerColor = when {
+                        product.isService -> MaterialTheme.colorScheme.surfaceVariant
+                        isOut -> com.example.ui.theme.DangerSoft
+                        isLow -> com.example.ui.theme.WarningSoft
+                        else -> com.example.ui.theme.SuccessSoft
+                    },
+                    contentColor = when {
+                        product.isService -> MaterialTheme.colorScheme.onSurfaceVariant
+                        isOut -> DangerRed
+                        isLow -> com.example.ui.theme.WarningAmber
+                        else -> com.example.ui.theme.SuccessGreen
+                    }
                 )
                 if (qty > 0) {
                     ErpStatusBadge("${qty.toInt()}x", TealPrimary, Color.White)

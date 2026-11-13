@@ -38,12 +38,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -164,6 +166,14 @@ fun ClientsScreen(
                     items(clients, key = { it.id }) { cli ->
                         val bal = clientBalance(cli)
                         val overLimit = cli.creditLimit > 0 && bal > cli.creditLimit
+                        val ltv = state.invoices
+                            .filter { !it.isDeleted && it.status == "final" && (it.clientId == cli.id || it.clientName.equals(cli.name, ignoreCase = true)) }
+                            .sumOf { it.grandTotal }
+                        val tier = when {
+                            ltv >= 25000.0 -> "VIP"
+                            ltv >= 5000.0 -> "REGULAR"
+                            else -> null
+                        }
                         SwipeActionCard(
                             onSwipeRight = { editingClient = cli },
                             rightLabel = "Edit",
@@ -180,8 +190,21 @@ fun ClientsScreen(
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(cli.name, style = MaterialTheme.typography.titleMedium)
-                                        Text(listOfNotNull(cli.phone.takeIf { it.isNotBlank() }, cli.gstin.takeIf { it.isNotBlank() }).joinToString(" • ").ifBlank { "No phone added" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(cli.name, style = MaterialTheme.typography.titleMedium)
+                                            if (tier != null) {
+                                                ErpStatusBadge(tier, MaterialTheme.colorScheme.primaryContainer, TealPrimary)
+                                            }
+                                        }
+                                        Text(
+                                            listOfNotNull(
+                                                cli.phone.takeIf { it.isNotBlank() },
+                                                cli.gstin.takeIf { it.isNotBlank() },
+                                                if (ltv > 0) "Billed ${FormatUtils.inr(ltv)}" else null
+                                            ).joinToString(" • ").ifBlank { "No phone added" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(FormatUtils.inr(bal), style = MaterialTheme.typography.titleSmall, color = if (overLimit) DangerRed else if (bal > 0) WarningAmber else SuccessGreen)
@@ -208,7 +231,22 @@ fun ClientsScreen(
                 Text(cli.name, style = MaterialTheme.typography.headlineSmall)
                 Text("Ledger Balance: ${FormatUtils.inr(bal)}", style = MaterialTheme.typography.titleMedium, color = TealPrimary)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { editingClient = cli; selectedClient = null }, modifier = Modifier.weight(1f)) { Text("Edit Client") }
+                    OutlinedButton(onClick = { editingClient = cli; selectedClient = null }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                    OutlinedButton(
+                        onClick = {
+                            val statement = buildString {
+                                appendLine("ACCOUNT STATEMENT — ${state.settings.businessName}")
+                                appendLine("Party: ${cli.name} (${cli.phone})")
+                                appendLine("Current Balance Due: ${FormatUtils.inr(bal)}")
+                                appendLine("--- Recent Transactions ---")
+                                cliInvoices.take(10).forEach {
+                                    appendLine("${it.dateStr} | ${it.invoiceNumber} | ${FormatUtils.inr(it.grandTotal)} | ${it.paymentStatus.uppercase()}")
+                                }
+                            }
+                            FormatUtils.shareText(context, "Ledger Statement - ${cli.name}", statement)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Statement") }
                     Button(
                         onClick = {
                             val msg = "Hello ${cli.name}, friendly reminder for pending balance ${FormatUtils.inr(bal)} with ${state.settings.businessName}."
@@ -218,7 +256,7 @@ fun ClientsScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(4.dp))
                         Text("Remind")
                     }
                 }
@@ -400,10 +438,19 @@ fun ExpensesScreen(
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val totalItc = remember(list) { list.filter { it.approvalStatus == "approved" }.sumOf { it.gstAmount } }
+            val byCategory = remember(list) {
+                list.filter { it.approvalStatus == "approved" }
+                    .groupBy { it.category.ifBlank { "Operations" } }
+                    .mapValues { (_, items) -> items.sumOf { it.amount } }
+                    .entries.sortedByDescending { it.value }.take(3)
+            }
+            val totalApproved = list.filter { it.approvalStatus == "approved" }.sumOf { it.amount }
+
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
-                    Text("Total Approved", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(FormatUtils.inr(list.filter { it.approvalStatus == "approved" }.sumOf { it.amount }), style = MaterialTheme.typography.titleLarge, color = DangerRed)
+                    Text("Approved Spend • ITC ${FormatUtils.inr(totalItc)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(FormatUtils.inr(totalApproved), style = MaterialTheme.typography.titleLarge, color = DangerRed)
                 }
                 Button(
                     onClick = { editing = ErpExpense(dateStr = FormatUtils.todayStr()) },
@@ -413,6 +460,27 @@ fun ExpensesScreen(
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Expense")
+                }
+            }
+
+            if (byCategory.isNotEmpty() && totalApproved > 0.0) {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Top Expense Categories", style = MaterialTheme.typography.labelLarge)
+                        byCategory.forEach { (cat, amt) ->
+                            val frac = (amt / totalApproved).toFloat().coerceIn(0.05f, 1f)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(cat, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(86.dp))
+                                LinearProgressIndicator(
+                                    progress = { frac },
+                                    color = DangerRed,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(4.dp))
+                                )
+                                Text(FormatUtils.inr(amt), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 }
             }
 

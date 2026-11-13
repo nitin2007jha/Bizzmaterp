@@ -252,7 +252,7 @@ fun ClientPickerSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CatalogItemPickerSheet(
     products: List<ErpProduct>,
@@ -262,7 +262,12 @@ fun CatalogItemPickerSheet(
     var search by remember { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf("all") }
 
-    val filtered = remember(products, search, typeFilter) {
+    val categories = remember(products) {
+        listOf("All") + products.filter { !it.isDeleted }.map { it.category.ifBlank { "General" } }.distinct().sorted()
+    }
+    var selectedCat by remember { mutableStateOf("All") }
+
+    val filtered = remember(products, search, typeFilter, selectedCat) {
         val q = search.trim().lowercase()
         products.filter { !it.isDeleted }
             .filter {
@@ -272,6 +277,7 @@ fun CatalogItemPickerSheet(
                     else -> true
                 }
             }
+            .filter { selectedCat == "All" || it.category.equals(selectedCat, ignoreCase = true) }
             .filter {
                 q.isBlank() ||
                     it.name.lowercase().contains(q) ||
@@ -301,7 +307,7 @@ fun CatalogItemPickerSheet(
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("all" to "All", "goods" to "Products", "services" to "Services").forEach { (k, lbl) ->
                     FilterChip(
                         selected = typeFilter == k,
@@ -309,6 +315,17 @@ fun CatalogItemPickerSheet(
                         label = { Text(lbl) },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
                     )
+                }
+            }
+            if (categories.size > 2) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    categories.take(6).forEach { cat ->
+                        FilterChip(
+                            selected = selectedCat == cat,
+                            onClick = { selectedCat = cat },
+                            label = { Text(cat) }
+                        )
+                    }
                 }
             }
             if (filtered.isEmpty()) {
@@ -324,6 +341,8 @@ fun CatalogItemPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filtered, key = { it.id.ifBlank { it.name } }) { prod ->
+                        val isOut = !prod.isService && prod.stock <= 0.0
+                        val isLow = !prod.isService && prod.stock > 0.0 && prod.stock <= prod.lowStockThreshold
                         Card(
                             onClick = { onSelectProduct(prod) },
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -335,12 +354,21 @@ fun CatalogItemPickerSheet(
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(prod.name, style = MaterialTheme.typography.titleSmall)
-                                    val sub = if (prod.isService) {
-                                        "Service • SAC: ${prod.hsnSac.ifBlank { "-" }}"
-                                    } else {
-                                        "Stock: ${prod.stock.toInt()} ${prod.unit} • HSN: ${prod.hsnSac.ifBlank { "-" }}"
+                                    val sub = when {
+                                        prod.isService -> "Service • ${prod.category} • SAC: ${prod.hsnSac.ifBlank { "-" }}"
+                                        isOut -> "OUT OF STOCK • ${prod.category} • HSN: ${prod.hsnSac.ifBlank { "-" }}"
+                                        isLow -> "LOW STOCK: ${prod.stock.toInt()} ${prod.unit} left • ${prod.category}"
+                                        else -> "In Stock: ${prod.stock.toInt()} ${prod.unit} • ${prod.category}"
                                     }
-                                    Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = sub,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = when {
+                                            isOut -> com.example.ui.theme.DangerRed
+                                            isLow -> com.example.ui.theme.WarningAmber
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
                                 }
                                 Text(
                                     "${FormatUtils.inr(prod.sellingPrice)} (+${prod.gstPercent.toInt()}%)",

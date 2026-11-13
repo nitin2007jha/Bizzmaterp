@@ -160,6 +160,63 @@ class ErpRepository(
         handleFirestoreError(e, OperationType.WRITE, "users/${auth.currentUser?.uid}/products")
     }
 
+    suspend fun adjustStockAtomic(deltas: List<Pair<String, Double>>): Result<List<ErpProduct>> = runCatching {
+        val uid = requireUserId()
+        if (deltas.isEmpty()) return@runCatching emptyList()
+        val colRef = db.collection("users").document(uid).collection("products")
+        val merged = deltas.groupBy({ it.first }, { it.second }).mapValues { (_, list) -> list.sum() }
+        db.runTransaction { tx ->
+            val updated = mutableListOf<ErpProduct>()
+            val pending = mutableListOf<Pair<com.google.firebase.firestore.DocumentReference, ErpProduct>>()
+            merged.forEach { (prodId, delta) ->
+                if (prodId.isNotBlank() && delta != 0.0) {
+                    val docRef = colRef.document(prodId)
+                    val snap = tx.get(docRef)
+                    val prod = snap.toObject(ErpProduct::class.java)
+                    if (prod != null && !prod.isService && !prod.isDeleted) {
+                        val nextStock = (prod.stock + delta).coerceAtLeast(0.0)
+                        val nextProd = prod.copy(userId = uid, stock = nextStock)
+                        pending += docRef to nextProd
+                        updated += nextProd
+                    }
+                }
+            }
+            pending.forEach { (docRef, nextProd) ->
+                tx.set(docRef, nextProd.toFirestoreMap(isCreate = false))
+            }
+            updated
+        }.await()
+    }.onFailure { e ->
+        if (e is CancellationException) throw e
+        handleFirestoreError(e, OperationType.WRITE, "users/${auth.currentUser?.uid}/products")
+    }
+
+    suspend fun renameProductCategory(
+        oldCategory: String,
+        newCategory: String,
+        products: List<ErpProduct>
+    ): Result<Int> = runCatching {
+        val uid = requireUserId()
+        val target = newCategory.trim().take(60).ifBlank { "General" }
+        val matching = products.filter {
+            !it.isDeleted && it.id.isNotBlank() && it.category.ifBlank { "General" }.equals(oldCategory.trim(), ignoreCase = true)
+        }
+        if (matching.isEmpty()) return@runCatching 0
+        val colRef = db.collection("users").document(uid).collection("products")
+        matching.chunked(400).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { prod ->
+                val docRef = colRef.document(prod.id)
+                batch.set(docRef, prod.copy(userId = uid, category = target).toFirestoreMap(isCreate = false))
+            }
+            batch.commit().await()
+        }
+        matching.size
+    }.onFailure { e ->
+        if (e is CancellationException) throw e
+        handleFirestoreError(e, OperationType.WRITE, "users/${auth.currentUser?.uid}/products")
+    }
+
     suspend fun saveClient(client: ErpClient): Result<String> = runCatching {
         val uid = requireUserId()
         val isCreate = client.id.isBlank() || client.createdAt == null

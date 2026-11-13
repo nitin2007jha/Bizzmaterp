@@ -52,15 +52,16 @@ jobs:
           SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          sudo chown -R "$(id -u):$(id -g)" "$SDK_DIR" || true
           mkdir -p "$SDK_DIR/licenses"
-          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$SDK_DIR/licenses/android-sdk-license"
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e" > "$SDK_DIR/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK_DIR/licenses/android-sdk-preview-license"
           printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6" > "$SDK_DIR/licenses/android-googletv-license"
           printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > "$SDK_DIR/licenses/google-gdk-license"
           SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
           if [ -x "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-            "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" || true
+            "$SDKMANAGER" --install "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || "$SDKMANAGER" --install "platform-tools" "build-tools;36.0.0" "platforms;android-36"
           fi
 
       - name: Set up Gradle 9.3.1
@@ -125,11 +126,9 @@ jobs:
       - name: Build Debug APK
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace
-          else
-            gradle assembleDebug --no-daemon --stacktrace
-          fi
+          GRADLE_CMD="gradle"
+          if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
+          "$GRADLE_CMD" assembleDebug --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload Debug APK artifact
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
@@ -147,11 +146,9 @@ jobs:
           KEY_PASSWORD: ${{ steps.prep.outputs.key_password }}
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew assembleRelease --no-daemon --stacktrace
-          else
-            gradle assembleRelease --no-daemon --stacktrace
-          fi
+          GRADLE_CMD="gradle"
+          if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
+          "$GRADLE_CMD" assembleRelease --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload Release APK artifact
         if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'both')) }}
@@ -169,11 +166,9 @@ jobs:
           KEY_PASSWORD: ${{ steps.prep.outputs.key_password }}
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew bundleRelease --no-daemon --stacktrace
-          else
-            gradle bundleRelease --no-daemon --stacktrace
-          fi
+          GRADLE_CMD="gradle"
+          if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
+          "$GRADLE_CMD" bundleRelease --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload App Bundle (.aab) artifact
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_aab == true }}

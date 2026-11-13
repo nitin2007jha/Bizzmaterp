@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,20 +16,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCartCheckout
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -38,10 +45,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,14 +62,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.core.FormatUtils
 import com.example.data.model.ErpProduct
+import com.example.data.model.ErpPurchaseOrder
+import com.example.data.model.PoLineItem
 import com.example.ui.components.ErpStatusBadge
 import com.example.ui.components.SwipeActionCard
 import com.example.ui.theme.DangerRed
@@ -69,14 +82,21 @@ import com.example.ui.theme.EmeraldAccent
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.SuccessSoft
 import com.example.ui.theme.TealPrimary
+import com.example.ui.theme.WarningAmber
+import com.example.ui.theme.WarningSoft
 import com.example.ui.viewmodel.ErpUiState
 
 @Composable
 fun InventoryScreen(
     state: ErpUiState,
     servicesOnly: Boolean = false,
+    managedCategories: List<String> = emptyList(),
     onSaveProduct: (ErpProduct) -> Unit,
     onAdjustStock: (ErpProduct, Double) -> Unit,
+    onSetExactStock: (ErpProduct, Double) -> Unit = { p, q -> onSaveProduct(p.copy(stock = q)) },
+    onAddCategory: (String) -> Unit = {},
+    onRenameCategory: (String, String) -> Unit = { _, _ -> },
+    onCreateRestockPo: (ErpPurchaseOrder) -> Unit = {},
     onSoftDelete: (ErpProduct) -> Unit,
     onMessage: (String) -> Unit
 ) {
@@ -85,7 +105,9 @@ fun InventoryScreen(
     var selectedCategory by remember { mutableStateOf("All") }
     var stockFilter by remember { mutableStateOf("all") }
     var editingProduct by remember { mutableStateOf<ErpProduct?>(null) }
+    var auditingProduct by remember { mutableStateOf<ErpProduct?>(null) }
     var showEditor by remember { mutableStateOf(false) }
+    var showCategorySheet by remember { mutableStateOf(false) }
     var showBarcodeDialog by remember { mutableStateOf(false) }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -98,16 +120,24 @@ fun InventoryScreen(
         }
     }
 
-    val categories = remember(state.products, servicesOnly) {
-        listOf("All") + state.products
+    val categories = remember(state.products, managedCategories, servicesOnly) {
+        val fromProds = state.products
             .filter { !it.isDeleted && it.isService == servicesOnly }
             .map { it.category.ifBlank { "General" } }
-            .distinct()
+        val combined = (fromProds + if (servicesOnly) emptyList() else managedCategories)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
             .sorted()
+        listOf("All") + combined
     }
 
     val today = remember { FormatUtils.todayStr() }
     val soonDate = remember(today) { FormatUtils.addDaysToDateStr(today, 30) }
+    val allActiveGoods = remember(state.products) { state.products.filter { !it.isDeleted && !it.isService } }
+    val outCount = remember(allActiveGoods) { allActiveGoods.count { it.stock <= 0.0 } }
+    val lowCount = remember(allActiveGoods) { allActiveGoods.count { it.stock > 0.0 && it.stock <= it.lowStockThreshold } }
+    val expCount = remember(allActiveGoods, soonDate) { allActiveGoods.count { it.expiryDate.isNotBlank() && it.expiryDate <= soonDate } }
 
     val list = remember(state.products, servicesOnly, query, selectedCategory, stockFilter, soonDate) {
         val q = query.trim().lowercase()
@@ -172,6 +202,91 @@ fun InventoryScreen(
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Add")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(EmeraldAccent))
+                    Text(
+                        text = if (servicesOnly) "Live Services (${list.size})" else "Real-Time Stock (${allActiveGoods.size} SKUs)",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showCategorySheet = true },
+                    modifier = Modifier.testTag("inventory_manage_categories_button")
+                ) {
+                    Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(16.dp), tint = TealPrimary)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Categories")
+                }
+            }
+
+            if (!servicesOnly && (outCount > 0 || lowCount > 0 || expCount > 0)) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (outCount > 0) DangerSoft else WarningSoft)
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.WarningAmber, contentDescription = null, tint = if (outCount > 0) DangerRed else WarningAmber)
+                                Text(
+                                    text = buildString {
+                                        if (outCount > 0) append("$outCount Out of Stock")
+                                        if (lowCount > 0) {
+                                            if (isNotEmpty()) append(" • ")
+                                            append("$lowCount Low Stock")
+                                        }
+                                        if (expCount > 0) {
+                                            if (isNotEmpty()) append(" • ")
+                                            append("$expCount Expiring")
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if (outCount > 0) DangerRed else WarningAmber
+                                )
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { stockFilter = if (outCount > 0) "out" else "low" },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("View Alerts") }
+                            if (outCount + lowCount > 0) {
+                                Button(
+                                    onClick = {
+                                        val needRestock = allActiveGoods.filter { it.stock <= it.lowStockThreshold }
+                                        val items = needRestock.map {
+                                            PoLineItem(it.id, it.name, (it.lowStockThreshold * 2.0 - it.stock).coerceAtLeast(5.0), it.costPrice.takeIf { c -> c > 0 } ?: it.sellingPrice * 0.7)
+                                        }
+                                        onCreateRestockPo(
+                                            ErpPurchaseOrder(
+                                                poNumber = "PO-${(state.purchaseOrders.size + 1).toString().padStart(3, '0')}",
+                                                vendorName = "Auto Restock Supplier",
+                                                dateStr = today,
+                                                status = "draft",
+                                                items = items,
+                                                totalAmount = items.sumOf { it.qty * it.rate }
+                                            )
+                                        )
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                                    modifier = Modifier.weight(1f).testTag("inventory_auto_restock_po")
+                                ) {
+                                    Icon(Icons.Default.ShoppingCartCheckout, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Auto PO")
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -282,11 +397,48 @@ fun InventoryScreen(
                                     if (prod.isService) {
                                         ErpStatusBadge("${prod.durationMins} min", SuccessSoft, SuccessGreen)
                                     } else {
+                                        val isOut = prod.stock <= 0.0
+                                        val isExpiring = prod.expiryDate.isNotBlank() && prod.expiryDate <= soonDate
+                                        val maxBar = (prod.lowStockThreshold.coerceAtLeast(5.0) * 3.0)
+                                        val fillRatio = (prod.stock / maxBar).toFloat().coerceIn(0f, 1f)
                                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            ErpStatusBadge(
-                                                "${prod.stock.toInt()} ${prod.unit}",
-                                                if (isLow) DangerSoft else SuccessSoft,
-                                                if (isLow) DangerRed else SuccessGreen
+                                            Surface(
+                                                onClick = { auditingProduct = prod },
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = when {
+                                                    isOut -> DangerSoft
+                                                    isLow -> WarningSoft
+                                                    else -> SuccessSoft
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = when {
+                                                        isOut -> "OUT OF STOCK (0 ${prod.unit})"
+                                                        isLow -> "LOW • ${prod.stock.toInt()} ${prod.unit}"
+                                                        else -> "${prod.stock.toInt()} ${prod.unit}"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = when {
+                                                        isOut -> DangerRed
+                                                        isLow -> WarningAmber
+                                                        else -> SuccessGreen
+                                                    },
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                            if (isExpiring) {
+                                                ErpStatusBadge("EXP ${prod.expiryDate}", DangerSoft, DangerRed)
+                                            }
+                                            LinearProgressIndicator(
+                                                progress = { fillRatio },
+                                                color = when {
+                                                    isOut -> DangerRed
+                                                    isLow -> WarningAmber
+                                                    else -> EmeraldAccent
+                                                },
+                                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier.width(96.dp).height(5.dp).clip(RoundedCornerShape(4.dp))
                                             )
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 IconButton(onClick = { onAdjustStock(prod, -1.0) }, modifier = Modifier.testTag("stock_dec_${prod.name}")) {
@@ -310,11 +462,35 @@ fun InventoryScreen(
     if (showEditor && editingProduct != null) {
         ProductEditorSheet(
             initial = editingProduct!!,
+            categorySuggestions = categories.filter { it != "All" },
             onDismiss = { showEditor = false },
             onSave = {
                 onSaveProduct(it)
                 showEditor = false
             }
+        )
+    }
+
+    if (showCategorySheet) {
+        CategoryManagerSheet(
+            products = state.products,
+            managedCategories = managedCategories,
+            servicesOnly = servicesOnly,
+            onAddCategory = onAddCategory,
+            onRenameCategory = onRenameCategory,
+            onSelectCategoryFilter = { selectedCategory = it },
+            onDismiss = { showCategorySheet = false }
+        )
+    }
+
+    auditingProduct?.let { prod ->
+        StockAuditDialog(
+            product = prod,
+            onApplyExactStock = { exact ->
+                onSetExactStock(prod, exact)
+                auditingProduct = null
+            },
+            onDismiss = { auditingProduct = null }
         )
     }
 
@@ -348,6 +524,7 @@ fun InventoryScreen(
 @Composable
 private fun ProductEditorSheet(
     initial: ErpProduct,
+    categorySuggestions: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (ErpProduct) -> Unit
 ) {
@@ -385,6 +562,18 @@ private fun ProductEditorSheet(
                 style = MaterialTheme.typography.headlineSmall
             )
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("prod_name_input"))
+            if (categorySuggestions.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(categorySuggestions) { suggested ->
+                        FilterChip(
+                            selected = category.equals(suggested, ignoreCase = true),
+                            onClick = { category = suggested },
+                            label = { Text(suggested) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                        )
+                    }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") }, singleLine = true, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = hsnSac, onValueChange = { hsnSac = it }, label = { Text("HSN / SAC") }, singleLine = true, modifier = Modifier.weight(1f))

@@ -182,6 +182,7 @@ private fun MainErpApp(
     val aiReportState by viewModel.aiReportState.collectAsStateWithLifecycle()
     val ariaMessages by viewModel.ariaMessages.collectAsStateWithLifecycle()
     val ariaBusy by viewModel.ariaBusy.collectAsStateWithLifecycle()
+    val managedCategories by viewModel.customCategories.collectAsStateWithLifecycle()
 
     val savedPin by remember {
         context.erpPrefs.data.map { it[KEY_PIN_CODE] ?: "1234" }
@@ -449,16 +450,26 @@ private fun MainErpApp(
                                     "inventory" -> InventoryScreen(
                                         state = uiState,
                                         servicesOnly = false,
+                                        managedCategories = managedCategories,
                                         onSaveProduct = viewModel::saveProduct,
                                         onAdjustStock = viewModel::adjustProductStock,
+                                        onSetExactStock = viewModel::setExactProductStock,
+                                        onAddCategory = viewModel::addCustomCategory,
+                                        onRenameCategory = viewModel::renameCategory,
+                                        onCreateRestockPo = viewModel::savePurchaseOrder,
                                         onSoftDelete = { viewModel.softDeleteProduct(it, true) },
                                         onMessage = { viewModel.emitToast(it) }
                                     )
                                     "services" -> InventoryScreen(
                                         state = uiState,
                                         servicesOnly = true,
+                                        managedCategories = managedCategories,
                                         onSaveProduct = viewModel::saveProduct,
                                         onAdjustStock = viewModel::adjustProductStock,
+                                        onSetExactStock = viewModel::setExactProductStock,
+                                        onAddCategory = viewModel::addCustomCategory,
+                                        onRenameCategory = viewModel::renameCategory,
+                                        onCreateRestockPo = viewModel::savePurchaseOrder,
                                         onSoftDelete = { viewModel.softDeleteProduct(it, true) },
                                         onMessage = { viewModel.emitToast(it) }
                                     )

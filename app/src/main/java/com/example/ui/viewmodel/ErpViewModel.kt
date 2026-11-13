@@ -139,6 +139,11 @@ class ErpViewModel(
     private val _pendingNavRoute = MutableSharedFlow<String>()
     val pendingNavRoute: SharedFlow<String> = _pendingNavRoute.asSharedFlow()
 
+    private val _customCategories = MutableStateFlow(
+        listOf("General", "Electronics", "Groceries", "Apparel", "Hardware", "Pharma", "Consulting")
+    )
+    val customCategories: StateFlow<List<String>> = _customCategories.asStateFlow()
+
     private val coreFlow = combine(
         repository.observeSettingsWithExists(currentUserId),
         repository.observeInvoices(currentUserId),
@@ -221,26 +226,41 @@ class ErpViewModel(
         }
     }
 
+    private fun resolveInvoiceStockDeltas(invoice: ErpInvoice, multiplier: Double): List<Pair<String, Double>> {
+        val currentProducts = uiState.value.products
+        return invoice.items.mapNotNull { line ->
+            val match = currentProducts.firstOrNull {
+                !it.isDeleted && ((line.productId.isNotBlank() && it.id == line.productId) ||
+                    (!it.isService && it.name.equals(line.name, ignoreCase = true)))
+            }
+            if (match != null && !match.isService && match.id.isNotBlank()) {
+                match.id to (line.qty * multiplier)
+            } else null
+        }
+    }
+
     fun saveInvoice(invoice: ErpInvoice, incrementCounter: Boolean = false, decrementStock: Boolean = false) {
         viewModelScope.launch {
             val isNewFinal = invoice.id.isBlank() && invoice.status == "final"
             repository.saveInvoice(invoice, incrementCounter)
                 .onSuccess {
+                    var stockAlertSuffix = ""
                     if (decrementStock && invoice.status == "final" && invoice.docType == "invoice") {
-                        val currentProducts = uiState.value.products
-                        invoice.items.forEach { line ->
-                            val match = currentProducts.firstOrNull {
-                                (line.productId.isNotBlank() && it.id == line.productId) ||
-                                    (!it.isService && it.name.equals(line.name, ignoreCase = true))
-                            }
-                            if (match != null && !match.isService) {
-                                val updatedStock = (match.stock - line.qty).coerceAtLeast(0.0)
-                                repository.saveProduct(match.copy(stock = updatedStock))
+                        val deltas = resolveInvoiceStockDeltas(invoice, multiplier = -1.0)
+                        if (deltas.isNotEmpty()) {
+                            repository.adjustStockAtomic(deltas).onSuccess { updated ->
+                                val outNow = updated.filter { it.stock <= 0.0 }
+                                val lowNow = updated.filter { it.stock > 0.0 && it.stock <= it.lowStockThreshold }
+                                stockAlertSuffix = when {
+                                    outNow.isNotEmpty() -> " • ALERT: ${outNow.first().name} is now OUT OF STOCK!"
+                                    lowNow.isNotEmpty() -> " • Low Stock: ${lowNow.first().name} (${lowNow.first().stock.toInt()} ${lowNow.first().unit} left)"
+                                    else -> " • Stock updated (${updated.size} SKUs)"
+                                }
                             }
                         }
                     }
                     emitToast(
-                        if (invoice.status == "draft") "Draft saved" else "Invoice ${invoice.invoiceNumber} saved!",
+                        (if (invoice.status == "draft") "Draft saved" else "Invoice ${invoice.invoiceNumber} saved!") + stockAlertSuffix,
                         confetti = isNewFinal
                     )
                 }
@@ -264,15 +284,32 @@ class ErpViewModel(
     fun softDeleteInvoice(invoice: ErpInvoice, deleted: Boolean = true) {
         viewModelScope.launch {
             repository.saveInvoice(invoice.copy(isDeleted = deleted))
-                .onSuccess { emitToast(if (deleted) "Moved to Recycle Bin" else "Invoice restored") }
+                .onSuccess {
+                    if (invoice.status == "final" && invoice.docType == "invoice") {
+                        val deltas = resolveInvoiceStockDeltas(invoice, multiplier = if (deleted) 1.0 else -1.0)
+                        if (deltas.isNotEmpty()) {
+                            repository.adjustStockAtomic(deltas)
+                        }
+                    }
+                    emitToast(if (deleted) "Moved to Recycle Bin (stock restored)" else "Invoice restored")
+                }
                 .onFailure { emitToast(it.localizedMessage ?: "Action failed", isError = true) }
         }
     }
 
     fun saveProduct(product: ErpProduct) {
         viewModelScope.launch {
+            val cat = product.category.trim()
+            if (cat.isNotBlank() && _customCategories.value.none { it.equals(cat, ignoreCase = true) }) {
+                _customCategories.value = _customCategories.value + cat
+            }
             repository.saveProduct(product)
-                .onSuccess { emitToast(if (product.isService) "Service saved" else "Product saved") }
+                .onSuccess {
+                    val stockMsg = if (!product.isService && product.stock <= product.lowStockThreshold) {
+                        " (Low stock alert active!)"
+                    } else ""
+                    emitToast((if (product.isService) "Service saved" else "Product saved") + stockMsg)
+                }
                 .onFailure { emitToast(it.localizedMessage ?: "Failed to save item", isError = true) }
         }
     }
@@ -281,8 +318,48 @@ class ErpViewModel(
         viewModelScope.launch {
             val next = (product.stock + delta).coerceAtLeast(0.0)
             repository.saveProduct(product.copy(stock = next))
-                .onSuccess { emitToast("Stock updated to ${next.toInt()} ${product.unit}") }
+                .onSuccess {
+                    val suffix = when {
+                        next <= 0.0 -> " — OUT OF STOCK!"
+                        next <= product.lowStockThreshold -> " — Low stock alert!"
+                        else -> ""
+                    }
+                    emitToast("Stock updated to ${next.toInt()} ${product.unit}$suffix")
+                }
                 .onFailure { emitToast(it.localizedMessage ?: "Stock update failed", isError = true) }
+        }
+    }
+
+    fun setExactProductStock(product: ErpProduct, exactQty: Double) {
+        viewModelScope.launch {
+            val next = exactQty.coerceAtLeast(0.0)
+            repository.saveProduct(product.copy(stock = next))
+                .onSuccess { emitToast("${product.name} stock set to ${next.toInt()} ${product.unit}") }
+                .onFailure { emitToast(it.localizedMessage ?: "Stock audit failed", isError = true) }
+        }
+    }
+
+    fun addCustomCategory(name: String) {
+        val clean = name.trim().take(60)
+        if (clean.isBlank()) return
+        if (_customCategories.value.none { it.equals(clean, ignoreCase = true) }) {
+            _customCategories.value = _customCategories.value + clean
+        }
+        emitToast("Category \"$clean\" ready")
+    }
+
+    fun renameCategory(oldCategory: String, newCategory: String) {
+        val target = newCategory.trim().take(60)
+        if (target.isBlank() || oldCategory.equals(target, ignoreCase = true)) return
+        viewModelScope.launch {
+            _customCategories.value = (_customCategories.value.map {
+                if (it.equals(oldCategory, ignoreCase = true)) target else it
+            } + target).distinctBy { it.lowercase() }
+            repository.renameProductCategory(oldCategory, target, uiState.value.products)
+                .onSuccess { count ->
+                    emitToast(if (count > 0) "Moved $count items to \"$target\"" else "Category renamed to \"$target\"")
+                }
+                .onFailure { emitToast(it.localizedMessage ?: "Rename failed", isError = true) }
         }
     }
 
@@ -691,13 +768,35 @@ class ErpViewModel(
         appointments: List<ErpAppointment>
     ): List<ErpNotification> {
         val list = mutableListOf<ErpNotification>()
-        val low = products.filter { !it.isDeleted && !it.isService && it.stock <= it.lowStockThreshold }
+        val activeGoods = products.filter { !it.isDeleted && !it.isService }
+        val outOfStock = activeGoods.filter { it.stock <= 0.0 }
+        if (outOfStock.isNotEmpty()) {
+            list += ErpNotification(
+                id = "out_of_stock",
+                title = "${outOfStock.size} Item(s) Out of Stock",
+                body = "${outOfStock.take(3).joinToString { it.name }} — replenish immediately.",
+                category = "Critical",
+                targetTab = "inventory"
+            )
+        }
+        val low = activeGoods.filter { it.stock > 0.0 && it.stock <= it.lowStockThreshold }
         if (low.isNotEmpty()) {
             list += ErpNotification(
                 id = "low_stock",
                 title = "${low.size} Low Stock Alert(s)",
-                body = "${low.first().name} and ${ (low.size - 1).coerceAtLeast(0) } others need restock.",
+                body = "${low.take(3).joinToString { "${it.name} (${it.stock.toInt()} ${it.unit})" }} below threshold.",
                 category = "Inventory",
+                targetTab = "inventory"
+            )
+        }
+        val soonDate = FormatUtils.addDaysToDateStr(FormatUtils.todayStr(), 30)
+        val expiring = activeGoods.filter { it.expiryDate.isNotBlank() && it.expiryDate <= soonDate }
+        if (expiring.isNotEmpty()) {
+            list += ErpNotification(
+                id = "expiring_stock",
+                title = "${expiring.size} Batch(es) Expiring Soon",
+                body = "${expiring.first().name} expires ${expiring.first().expiryDate}.",
+                category = "Expiry",
                 targetTab = "inventory"
             )
         }

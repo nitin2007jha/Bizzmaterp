@@ -384,6 +384,10 @@ fun InvoiceBuilderScreen(
                                 val taxAmt = if (gstInclusive && item.gstPercent > 0) gross - taxable else taxable * (item.gstPercent / 100.0)
                                 val lineTotal = taxable + taxAmt
 
+                                val matchedProd = state.products.firstOrNull {
+                                    !it.isDeleted && ((item.productId.isNotBlank() && it.id == item.productId) ||
+                                        (!it.isService && it.name.equals(item.name, ignoreCase = true)))
+                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -404,11 +408,22 @@ fun InvoiceBuilderScreen(
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        Text(
-                                            text = "Line Total: ${FormatUtils.inr(lineTotal)}",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = TealPrimary
-                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Line Total: ${FormatUtils.inr(lineTotal)}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = TealPrimary
+                                            )
+                                            if (docType == "invoice" && matchedProd != null && !matchedProd.isService) {
+                                                val exceeds = item.qty > matchedProd.stock
+                                                val after = (matchedProd.stock - item.qty).coerceAtLeast(0.0).toInt()
+                                                Text(
+                                                    text = if (exceeds) "⚠ Only ${matchedProd.stock.toInt()} left" else "• After bill: $after ${matchedProd.unit}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (exceeds) DangerRed else EmeraldAccent
+                                                )
+                                            }
+                                        }
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(onClick = {
@@ -602,11 +617,13 @@ fun InvoiceBuilderScreen(
 
                 Spacer(Modifier.height(8.dp))
 
+                val shouldIncrement = editingInvoice == null
+                val shouldDeduct = docType == "invoice" && (editingInvoice == null || editingInvoice.status != "final" || editingInvoice.docType != "invoice")
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = {
                             val inv = buildInvoice("final")
-                            onSaveInvoice(inv, editingInvoice == null, editingInvoice == null)
+                            onSaveInvoice(inv, shouldIncrement, shouldDeduct)
                             FormatUtils.printInvoice(context, inv, settings, paperSize, defaultTerms)
                                 .onFailure { onPrintMessage(it.localizedMessage ?: "Print unavailable", true) }
                         },
@@ -619,7 +636,7 @@ fun InvoiceBuilderScreen(
                         Text("Save & Print")
                     }
                     Button(
-                        onClick = { onSaveInvoice(buildInvoice("final"), editingInvoice == null, editingInvoice == null) },
+                        onClick = { onSaveInvoice(buildInvoice("final"), shouldIncrement, shouldDeduct) },
                         enabled = lineItems.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
                         modifier = Modifier.weight(1.2f).height(52.dp).testTag("invoice_finalize_button")
@@ -705,7 +722,8 @@ fun InvoiceBuilderScreen(
             },
             onSaveAndPrint = {
                 showPreviewSheet = false
-                onSaveInvoice(previewInv, editingInvoice == null, editingInvoice == null)
+                val shouldDeduct = docType == "invoice" && (editingInvoice == null || editingInvoice.status != "final" || editingInvoice.docType != "invoice")
+                onSaveInvoice(previewInv, editingInvoice == null, shouldDeduct)
                 FormatUtils.printInvoice(context, previewInv, settings, paperSize, defaultTerms)
                     .onFailure { onPrintMessage(it.localizedMessage ?: "Print failed", true) }
             },
