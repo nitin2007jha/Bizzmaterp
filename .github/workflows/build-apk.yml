@@ -116,6 +116,8 @@ jobs:
           if [ ! -f app/google-services.json ] && [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
             echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
             echo "Decoded app/google-services.json from secret"
+          elif [ ! -f app/google-services.json ]; then
+            echo "::notice::app/google-services.json not found in repo or GOOGLE_SERVICES_JSON_BASE64 secret. APK will compile cleanly, and adding GOOGLE_SERVICES_JSON_BASE64 enables Firebase & Google Sign-In in CI APKs."
           fi
 
           if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
