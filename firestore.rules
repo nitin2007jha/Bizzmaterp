@@ -1,0 +1,448 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOptStr(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptNum(data, field) {
+      return !(field in data) || data[field] is number;
+    }
+
+    function isOptBool(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    function hasValidTimestampsOnCreate(data) {
+      return data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function hasValidTimestampsOnUpdate(data) {
+      return data.createdAt == existing().createdAt &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSettings(data, userId) {
+      return data.userId == userId &&
+             data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 120 &&
+             data.invoicePrefix is string && data.invoicePrefix.size() <= 20 &&
+             data.nextInvoiceNumber is int && data.nextInvoiceNumber >= 1 &&
+             data.invoiceTemplate is string && data.invoiceTemplate.size() <= 30 &&
+             isOptStr(data, 'ownerName', 100) &&
+             isOptStr(data, 'phone', 30) &&
+             isOptStr(data, 'email', 120) &&
+             isOptStr(data, 'gstin', 20) &&
+             isOptStr(data, 'pan', 20) &&
+             isOptStr(data, 'address', 300) &&
+             isOptStr(data, 'state', 80) &&
+             isOptStr(data, 'bankName', 100) &&
+             isOptStr(data, 'accountNo', 40) &&
+             isOptStr(data, 'ifsc', 20) &&
+             isOptStr(data, 'upiId', 100) &&
+             isOptBool(data, 'gstInclusive') &&
+             (!('dailyTarget' in data) || (data.dailyTarget is number && data.dailyTarget >= 0)) &&
+             (!('language' in data) || data.language in ['en', 'hi', 'hinglish']) &&
+             isOptBool(data, 'pinLockEnabled') &&
+             (!('darkMode' in data) || data.darkMode in ['system', 'light', 'dark']) &&
+             isOptStr(data, 'storeSlug', 60) &&
+             isOptStr(data, 'storeTagline', 160) &&
+             isOptBool(data, 'storeEnabled') &&
+             isOptStr(data, 'whatsappOrderPhone', 30) &&
+             isOptStr(data, 'storeThemeColor', 20) &&
+             (!('enabledModules' in data) || (data.enabledModules is list && data.enabledModules.size() <= 30 && (data.enabledModules.size() == 0 || data.enabledModules[0] is string)));
+    }
+
+    function isValidInvoice(data, userId) {
+      return data.userId == userId &&
+             data.invoiceNumber is string && data.invoiceNumber.size() >= 1 && data.invoiceNumber.size() <= 40 &&
+             data.docType in ['invoice', 'quotation', 'proforma', 'purchase', 'credit_note', 'challan'] &&
+             data.status in ['final', 'draft', 'cancelled'] &&
+             data.paymentStatus in ['paid', 'partial', 'unpaid'] &&
+             data.paymentMode in ['upi', 'cash', 'credit', 'split', 'bank'] &&
+             data.clientName is string && data.clientName.size() <= 120 &&
+             data.dateStr is string && data.dateStr.size() <= 20 &&
+             data.grandTotal is number &&
+             data.isDeleted is bool &&
+             data.items is list && data.items.size() <= 50 &&
+             isOptStr(data, 'clientId', 128) &&
+             isOptStr(data, 'clientPhone', 30) &&
+             isOptStr(data, 'clientGstin', 20) &&
+             isOptStr(data, 'clientAddress', 300) &&
+             isOptStr(data, 'dueDateStr', 20) &&
+             (!('gstMode' in data) || data.gstMode in ['intra', 'inter']) &&
+             isOptBool(data, 'gstInclusive') &&
+             isOptBool(data, 'reverseCharge') &&
+             isOptNum(data, 'subtotal') &&
+             isOptNum(data, 'discountAmount') &&
+             isOptNum(data, 'tdsAmount') &&
+             isOptNum(data, 'shippingAmount') &&
+             isOptNum(data, 'cgstTotal') &&
+             isOptNum(data, 'sgstTotal') &&
+             isOptNum(data, 'igstTotal') &&
+             isOptNum(data, 'paidAmount') &&
+             isOptNum(data, 'upiSplit') &&
+             isOptNum(data, 'cashSplit') &&
+             isOptNum(data, 'creditSplit') &&
+             isOptStr(data, 'notes', 500) &&
+             isOptStr(data, 'templateId', 30) &&
+             isOptStr(data, 'branchId', 128);
+    }
+
+    function isValidProduct(data, userId) {
+      return data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.isService is bool &&
+             data.sellingPrice is number && data.sellingPrice >= 0 &&
+             data.gstPercent is number && data.gstPercent >= 0 && data.gstPercent <= 100 &&
+             data.stock is number &&
+             data.isDeleted is bool &&
+             isOptStr(data, 'sku', 60) &&
+             isOptStr(data, 'barcode', 60) &&
+             isOptStr(data, 'hsnSac', 20) &&
+             isOptStr(data, 'category', 60) &&
+             (!('costPrice' in data) || (data.costPrice is number && data.costPrice >= 0)) &&
+             (!('lowStockThreshold' in data) || (data.lowStockThreshold is number && data.lowStockThreshold >= 0)) &&
+             isOptStr(data, 'unit', 20) &&
+             (!('durationMins' in data) || (data.durationMins is int && data.durationMins >= 0)) &&
+             isOptStr(data, 'batchNo', 40) &&
+             isOptStr(data, 'expiryDate', 20) &&
+             isOptBool(data, 'showInStore') &&
+             isOptStr(data, 'description', 400);
+    }
+
+    function isValidClient(data, userId) {
+      return data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.openingBalance is number &&
+             data.isDeleted is bool &&
+             isOptStr(data, 'email', 120) &&
+             isOptStr(data, 'gstin', 20) &&
+             isOptStr(data, 'address', 300) &&
+             isOptStr(data, 'state', 80) &&
+             (!('creditLimit' in data) || (data.creditLimit is number && data.creditLimit >= 0)) &&
+             isOptStr(data, 'birthday', 20) &&
+             isOptStr(data, 'notes', 400);
+    }
+
+    function isValidExpense(data, userId) {
+      return data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.amount is number && data.amount >= 0 &&
+             data.paymentMode in ['cash', 'upi', 'bank', 'card'] &&
+             data.dateStr is string && data.dateStr.size() <= 20 &&
+             data.approvalStatus in ['approved', 'pending', 'rejected'] &&
+             data.isDeleted is bool &&
+             isOptStr(data, 'vendor', 120) &&
+             (!('gstAmount' in data) || (data.gstAmount is number && data.gstAmount >= 0)) &&
+             isOptStr(data, 'notes', 400) &&
+             isOptStr(data, 'submittedBy', 100);
+    }
+
+    function isValidPurchaseOrder(data, userId) {
+      return data.userId == userId &&
+             data.poNumber is string && data.poNumber.size() >= 1 && data.poNumber.size() <= 40 &&
+             data.vendorName is string && data.vendorName.size() >= 1 && data.vendorName.size() <= 120 &&
+             data.dateStr is string && data.dateStr.size() <= 20 &&
+             data.status in ['draft', 'sent', 'received'] &&
+             data.items is list && data.items.size() <= 50 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             isOptStr(data, 'vendorPhone', 30) &&
+             isOptStr(data, 'notes', 400);
+    }
+
+    function isValidAppointment(data, userId) {
+      return data.userId == userId &&
+             data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120 &&
+             data.serviceName is string && data.serviceName.size() >= 1 && data.serviceName.size() <= 120 &&
+             data.dateStr is string && data.dateStr.size() <= 20 &&
+             data.timeStr is string && data.timeStr.size() <= 20 &&
+             data.status in ['scheduled', 'completed', 'cancelled'] &&
+             isOptStr(data, 'clientPhone', 30) &&
+             (!('amount' in data) || (data.amount is number && data.amount >= 0)) &&
+             isOptStr(data, 'notes', 400);
+    }
+
+    function isValidBranch(data, userId) {
+      return data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.isActive is bool &&
+             isOptStr(data, 'address', 300) &&
+             isOptStr(data, 'phone', 30) &&
+             isOptStr(data, 'manager', 100);
+    }
+
+    function isValidEmployee(data, userId) {
+      return data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.role is string && data.role.size() >= 1 && data.role.size() <= 60 &&
+             data.isActive is bool &&
+             data.permissions is list && data.permissions.size() <= 80 &&
+             (data.permissions.size() == 0 || data.permissions[0] is string) &&
+             isOptStr(data, 'phone', 30) &&
+             isOptStr(data, 'email', 120);
+    }
+
+    function isValidRecurring(data, userId) {
+      return data.userId == userId &&
+             data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120 &&
+             data.frequency in ['weekly', 'monthly', 'quarterly', 'yearly'] &&
+             data.nextRunDate is string && data.nextRunDate.size() <= 20 &&
+             data.items is list && data.items.size() <= 50 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.isActive is bool &&
+             isOptStr(data, 'clientPhone', 30);
+    }
+
+    function isValidWarranty(data, userId) {
+      return data.userId == userId &&
+             data.type in ['warranty', 'amc'] &&
+             data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120 &&
+             data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 120 &&
+             data.startDate is string && data.startDate.size() <= 20 &&
+             data.months is int && data.months >= 1 && data.months <= 120 &&
+             isOptStr(data, 'mobile', 30) &&
+             isOptStr(data, 'serialNo', 60);
+    }
+
+    function isValidCoupon(data, userId) {
+      return data.userId == userId &&
+             data.code is string && data.code.size() >= 1 && data.code.size() <= 30 &&
+             data.discountPercent is number && data.discountPercent >= 0 && data.discountPercent <= 100 &&
+             data.isActive is bool;
+    }
+
+    function isValidOnlineOrder(data, userId) {
+      return data.userId == userId &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['pending', 'accepted', 'completed', 'cancelled'] &&
+             isOptStr(data, 'customerPhone', 30) &&
+             isOptStr(data, 'address', 300) &&
+             isOptStr(data, 'itemsSummary', 500);
+    }
+
+    match /users/{userId}/config/{configId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(configId);
+      allow create: if isOwner(userId) && isValidId(configId) &&
+        incoming().keys().hasAll(['userId', 'businessName', 'invoicePrefix', 'nextInvoiceNumber', 'invoiceTemplate', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'businessName', 'ownerName', 'phone', 'email', 'gstin', 'pan', 'address', 'state', 'bankName', 'accountNo', 'ifsc', 'upiId', 'invoicePrefix', 'nextInvoiceNumber', 'invoiceTemplate', 'gstInclusive', 'dailyTarget', 'language', 'pinLockEnabled', 'darkMode', 'storeSlug', 'storeTagline', 'storeEnabled', 'whatsappOrderPhone', 'storeThemeColor', 'enabledModules', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidSettings(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(configId) &&
+        isValidSettings(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'ownerName', 'phone', 'email', 'gstin', 'pan', 'address', 'state', 'bankName', 'accountNo', 'ifsc', 'upiId', 'invoicePrefix', 'nextInvoiceNumber', 'invoiceTemplate', 'gstInclusive', 'dailyTarget', 'language', 'pinLockEnabled', 'darkMode', 'storeSlug', 'storeTagline', 'storeEnabled', 'whatsappOrderPhone', 'storeThemeColor', 'enabledModules', 'updatedAt']);
+    }
+
+    match /users/{userId}/invoices/{invoiceId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(invoiceId);
+      allow create: if isOwner(userId) && isValidId(invoiceId) &&
+        incoming().keys().hasAll(['userId', 'invoiceNumber', 'docType', 'status', 'paymentStatus', 'paymentMode', 'clientName', 'dateStr', 'grandTotal', 'items', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'invoiceNumber', 'docType', 'status', 'paymentStatus', 'paymentMode', 'clientId', 'clientName', 'clientPhone', 'clientGstin', 'clientAddress', 'dateStr', 'dueDateStr', 'gstMode', 'gstInclusive', 'reverseCharge', 'subtotal', 'discountAmount', 'tdsAmount', 'shippingAmount', 'cgstTotal', 'sgstTotal', 'igstTotal', 'grandTotal', 'paidAmount', 'upiSplit', 'cashSplit', 'creditSplit', 'notes', 'templateId', 'branchId', 'isDeleted', 'items', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidInvoice(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(invoiceId) &&
+        isValidInvoice(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['invoiceNumber', 'docType', 'status', 'paymentStatus', 'paymentMode', 'clientId', 'clientName', 'clientPhone', 'clientGstin', 'clientAddress', 'dateStr', 'dueDateStr', 'gstMode', 'gstInclusive', 'reverseCharge', 'subtotal', 'discountAmount', 'tdsAmount', 'shippingAmount', 'cgstTotal', 'sgstTotal', 'igstTotal', 'grandTotal', 'paidAmount', 'upiSplit', 'cashSplit', 'creditSplit', 'notes', 'templateId', 'branchId', 'isDeleted', 'items', 'updatedAt']);
+    }
+
+    match /users/{userId}/products/{productId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(productId);
+      allow create: if isOwner(userId) && isValidId(productId) &&
+        incoming().keys().hasAll(['userId', 'name', 'isService', 'sellingPrice', 'gstPercent', 'stock', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'name', 'sku', 'barcode', 'hsnSac', 'category', 'isService', 'sellingPrice', 'costPrice', 'gstPercent', 'stock', 'lowStockThreshold', 'unit', 'durationMins', 'batchNo', 'expiryDate', 'showInStore', 'description', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidProduct(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(productId) &&
+        isValidProduct(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'sku', 'barcode', 'hsnSac', 'category', 'isService', 'sellingPrice', 'costPrice', 'gstPercent', 'stock', 'lowStockThreshold', 'unit', 'durationMins', 'batchNo', 'expiryDate', 'showInStore', 'description', 'isDeleted', 'updatedAt']);
+    }
+
+    match /users/{userId}/clients/{clientId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(clientId);
+      allow create: if isOwner(userId) && isValidId(clientId) &&
+        incoming().keys().hasAll(['userId', 'name', 'phone', 'openingBalance', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'name', 'phone', 'email', 'gstin', 'address', 'state', 'openingBalance', 'creditLimit', 'birthday', 'notes', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidClient(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(clientId) &&
+        isValidClient(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'gstin', 'address', 'state', 'openingBalance', 'creditLimit', 'birthday', 'notes', 'isDeleted', 'updatedAt']);
+    }
+
+    match /users/{userId}/expenses/{expenseId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(expenseId);
+      allow create: if isOwner(userId) && isValidId(expenseId) &&
+        incoming().keys().hasAll(['userId', 'title', 'category', 'amount', 'paymentMode', 'dateStr', 'approvalStatus', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'title', 'category', 'vendor', 'amount', 'gstAmount', 'paymentMode', 'dateStr', 'notes', 'approvalStatus', 'submittedBy', 'isDeleted', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidExpense(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(expenseId) &&
+        isValidExpense(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'vendor', 'amount', 'gstAmount', 'paymentMode', 'dateStr', 'notes', 'approvalStatus', 'submittedBy', 'isDeleted', 'updatedAt']);
+    }
+
+    match /users/{userId}/purchase_orders/{poId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(poId);
+      allow create: if isOwner(userId) && isValidId(poId) &&
+        incoming().keys().hasAll(['userId', 'poNumber', 'vendorName', 'dateStr', 'status', 'items', 'totalAmount', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'poNumber', 'vendorName', 'vendorPhone', 'dateStr', 'status', 'items', 'totalAmount', 'notes', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidPurchaseOrder(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(poId) &&
+        isValidPurchaseOrder(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['poNumber', 'vendorName', 'vendorPhone', 'dateStr', 'status', 'items', 'totalAmount', 'notes', 'updatedAt']);
+    }
+
+    match /users/{userId}/appointments/{appointmentId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(appointmentId);
+      allow create: if isOwner(userId) && isValidId(appointmentId) &&
+        incoming().keys().hasAll(['userId', 'clientName', 'serviceName', 'dateStr', 'timeStr', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'clientName', 'clientPhone', 'serviceName', 'dateStr', 'timeStr', 'amount', 'status', 'notes', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidAppointment(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(appointmentId) &&
+        isValidAppointment(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['clientName', 'clientPhone', 'serviceName', 'dateStr', 'timeStr', 'amount', 'status', 'notes', 'updatedAt']);
+    }
+
+    match /users/{userId}/branches/{branchId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(branchId);
+      allow create: if isOwner(userId) && isValidId(branchId) &&
+        incoming().keys().hasAll(['userId', 'name', 'isActive', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'name', 'address', 'phone', 'manager', 'isActive', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidBranch(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(branchId) &&
+        isValidBranch(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'phone', 'manager', 'isActive', 'updatedAt']);
+    }
+
+    match /users/{userId}/employees/{employeeId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(employeeId);
+      allow create: if isOwner(userId) && isValidId(employeeId) &&
+        incoming().keys().hasAll(['userId', 'name', 'role', 'isActive', 'permissions', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'name', 'role', 'phone', 'email', 'isActive', 'permissions', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidEmployee(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(employeeId) &&
+        isValidEmployee(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'phone', 'email', 'isActive', 'permissions', 'updatedAt']);
+    }
+
+    match /users/{userId}/recurring/{recurringId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(recurringId);
+      allow create: if isOwner(userId) && isValidId(recurringId) &&
+        incoming().keys().hasAll(['userId', 'clientName', 'frequency', 'nextRunDate', 'items', 'totalAmount', 'isActive', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'clientName', 'clientPhone', 'frequency', 'nextRunDate', 'items', 'totalAmount', 'isActive', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidRecurring(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(recurringId) &&
+        isValidRecurring(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['clientName', 'clientPhone', 'frequency', 'nextRunDate', 'items', 'totalAmount', 'isActive', 'updatedAt']);
+    }
+
+    match /users/{userId}/warranties/{warrantyId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(warrantyId);
+      allow create: if isOwner(userId) && isValidId(warrantyId) &&
+        incoming().keys().hasAll(['userId', 'type', 'clientName', 'productName', 'startDate', 'months', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'type', 'clientName', 'mobile', 'productName', 'serialNo', 'startDate', 'months', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidWarranty(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(warrantyId) &&
+        isValidWarranty(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['type', 'clientName', 'mobile', 'productName', 'serialNo', 'startDate', 'months', 'updatedAt']);
+    }
+
+    match /users/{userId}/coupons/{couponId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(couponId);
+      allow create: if isOwner(userId) && isValidId(couponId) &&
+        incoming().keys().hasAll(['userId', 'code', 'discountPercent', 'isActive', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'code', 'discountPercent', 'isActive', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidCoupon(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(couponId) &&
+        isValidCoupon(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['code', 'discountPercent', 'isActive', 'updatedAt']);
+    }
+
+    match /users/{userId}/online_orders/{orderId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(orderId);
+      allow create: if isOwner(userId) && isValidId(orderId) &&
+        incoming().keys().hasAll(['userId', 'customerName', 'totalAmount', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'customerName', 'customerPhone', 'address', 'itemsSummary', 'totalAmount', 'status', 'createdAt', 'updatedAt']) &&
+        hasValidTimestampsOnCreate(incoming()) &&
+        isValidOnlineOrder(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(orderId) &&
+        isValidOnlineOrder(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        hasValidTimestampsOnUpdate(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['customerName', 'customerPhone', 'address', 'itemsSummary', 'totalAmount', 'status', 'updatedAt']);
+    }
+  }
+}

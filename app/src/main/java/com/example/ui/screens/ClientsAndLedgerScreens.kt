@@ -1,0 +1,420 @@
+package com.example.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.example.core.FormatUtils
+import com.example.data.model.ErpClient
+import com.example.data.model.ErpExpense
+import com.example.ui.components.ErpStatusBadge
+import com.example.ui.components.SwipeActionCard
+import com.example.ui.theme.DangerRed
+import com.example.ui.theme.DangerSoft
+import com.example.ui.theme.EmeraldAccent
+import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.SuccessSoft
+import com.example.ui.theme.TealPrimary
+import com.example.ui.theme.WarningAmber
+import com.example.ui.theme.WarningSoft
+import com.example.ui.viewmodel.ErpUiState
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ClientsScreen(
+    state: ErpUiState,
+    onSaveClient: (ErpClient) -> Unit,
+    onSoftDelete: (ErpClient) -> Unit
+) {
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var selectedClient by remember { mutableStateOf<ErpClient?>(null) }
+    var editingClient by remember { mutableStateOf<ErpClient?>(null) }
+
+    val clients = remember(state.clients, query) {
+        val q = query.trim().lowercase()
+        state.clients.filter { !it.isDeleted }
+            .filter { q.isBlank() || it.name.lowercase().contains(q) || it.phone.contains(q) || it.gstin.lowercase().contains(q) }
+    }
+
+    fun clientBalance(cli: ErpClient): Double {
+        val unpaidInv = state.invoices
+            .filter { !it.isDeleted && it.status == "final" && it.paymentStatus != "paid" && (it.clientId == cli.id || it.clientName.equals(cli.name, ignoreCase = true)) }
+            .sumOf { (it.grandTotal - it.paidAmount).coerceAtLeast(0.0) }
+        return cli.openingBalance + unpaidInv
+    }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("Search clients, phone, GSTIN...") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f).testTag("clients_search_input")
+                )
+                Button(
+                    onClick = { editingClient = ErpClient() },
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.height(52.dp).testTag("clients_add_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Client")
+                }
+            }
+
+            if (clients.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Text("No clients yet. Tap + Client to add parties to your CRM.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 100.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(clients, key = { it.id }) { cli ->
+                        val bal = clientBalance(cli)
+                        SwipeActionCard(
+                            onSwipeRight = { editingClient = cli },
+                            rightLabel = "Edit",
+                            rightColor = TealPrimary,
+                            onSwipeLeft = { onSoftDelete(cli) },
+                            leftLabel = "Trash"
+                        ) {
+                            Card(
+                                onClick = { selectedClient = cli },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("client_card_${cli.name}")
+                            ) {
+                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(cli.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(listOfNotNull(cli.phone.takeIf { it.isNotBlank() }, cli.gstin.takeIf { it.isNotBlank() }).joinToString(" • ").ifBlank { "No phone added" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(FormatUtils.inr(bal), style = MaterialTheme.typography.titleSmall, color = if (bal > 0) WarningAmber else SuccessGreen)
+                                        ErpStatusBadge(if (bal > 0) "DUE" else "SETTLED", if (bal > 0) WarningSoft else SuccessSoft, if (bal > 0) WarningAmber else SuccessGreen)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    selectedClient?.let { cli ->
+        val cliInvoices = state.invoices.filter { !it.isDeleted && (it.clientId == cli.id || it.clientName.equals(cli.name, ignoreCase = true)) }
+        val bal = clientBalance(cli)
+        ModalBottomSheet(onDismissRequest = { selectedClient = null }) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(cli.name, style = MaterialTheme.typography.headlineSmall)
+                Text("Ledger Balance: ${FormatUtils.inr(bal)}", style = MaterialTheme.typography.titleMedium, color = TealPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { editingClient = cli; selectedClient = null }, modifier = Modifier.weight(1f)) { Text("Edit Client") }
+                    Button(
+                        onClick = {
+                            val msg = "Hello ${cli.name}, friendly reminder for pending balance ${FormatUtils.inr(bal)} with ${state.settings.businessName}."
+                            FormatUtils.shareText(context, "Payment Reminder", msg)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Remind")
+                    }
+                }
+                Text("Transactions (${cliInvoices.size})", style = MaterialTheme.typography.titleSmall)
+                LazyColumn(modifier = Modifier.heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(cliInvoices) { inv ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${inv.invoiceNumber} • ${inv.dateStr}", style = MaterialTheme.typography.bodyMedium)
+                            Text("${FormatUtils.inr(inv.grandTotal)} (${inv.paymentStatus})", style = MaterialTheme.typography.titleSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editingClient?.let { initial ->
+        ClientEditorSheet(
+            initial = initial,
+            onDismiss = { editingClient = null },
+            onSave = {
+                onSaveClient(it)
+                editingClient = null
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientEditorSheet(initial: ErpClient, onDismiss: () -> Unit, onSave: (ErpClient) -> Unit) {
+    var name by remember { mutableStateOf(initial.name) }
+    var phone by remember { mutableStateOf(initial.phone) }
+    var email by remember { mutableStateOf(initial.email) }
+    var gstin by remember { mutableStateOf(initial.gstin) }
+    var address by remember { mutableStateOf(initial.address) }
+    var opening by remember { mutableStateOf(if (initial.openingBalance != 0.0) initial.openingBalance.toString() else "") }
+    var creditLimit by remember { mutableStateOf(if (initial.creditLimit > 0) initial.creditLimit.toString() else "") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(if (initial.id.isBlank()) "Add Client" else "Edit Client", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Client / Party Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("client_name_input"))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = gstin, onValueChange = { gstin = it.uppercase() }, label = { Text("GSTIN") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+            OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = opening, onValueChange = { opening = it }, label = { Text("Opening Bal ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = creditLimit, onValueChange = { creditLimit = it }, label = { Text("Credit Limit ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+            }
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onSave(initial.copy(name = name.trim(), phone = phone.trim(), email = email.trim(), gstin = gstin.trim(), address = address.trim(), openingBalance = opening.toDoubleOrNull() ?: 0.0, creditLimit = creditLimit.toDoubleOrNull() ?: 0.0))
+                    }
+                },
+                enabled = name.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("client_save_button")
+            ) { Text("Save Client") }
+        }
+    }
+}
+
+private data class DaybookEntry(val dateStr: String, val title: String, val subtitle: String, val amount: Double, val isCredit: Boolean)
+
+@Composable
+fun DaybookScreen(state: ErpUiState) {
+    val entries = remember(state.invoices, state.expenses) {
+        val rev = state.invoices.filter { !it.isDeleted && it.status == "final" && it.docType == "invoice" }.map {
+            DaybookEntry(it.dateStr, "Sale ${it.invoiceNumber}", "${it.clientName.ifBlank { "Walk-in" }} • ${it.paymentMode.uppercase()}", it.grandTotal, true)
+        }
+        val exp = state.expenses.filter { !it.isDeleted && it.approvalStatus != "rejected" }.map {
+            DaybookEntry(it.dateStr, it.title.ifBlank { it.category }, "${it.category} • ${it.paymentMode.uppercase()}", it.amount, false)
+        }
+        (rev + exp).sortedByDescending { it.dateStr }
+    }
+    val cashIn = entries.filter { it.isCredit }.sumOf { it.amount }
+    val cashOut = entries.filter { !it.isCredit }.sumOf { it.amount }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = SuccessSoft)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Total Inflow", style = MaterialTheme.typography.labelSmall, color = SuccessGreen)
+                        Text(FormatUtils.inr(cashIn), style = MaterialTheme.typography.titleMedium, color = SuccessGreen)
+                    }
+                }
+                Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = DangerSoft)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Total Outflow", style = MaterialTheme.typography.labelSmall, color = DangerRed)
+                        Text(FormatUtils.inr(cashOut), style = MaterialTheme.typography.titleMedium, color = DangerRed)
+                    }
+                }
+            }
+            LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(entries) { e ->
+                    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(if (e.isCredit) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, contentDescription = null, tint = if (e.isCredit) SuccessGreen else DangerRed)
+                            Column(Modifier.weight(1f)) {
+                                Text(e.title, style = MaterialTheme.typography.titleSmall)
+                                Text("${e.dateStr} • ${e.subtitle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text((if (e.isCredit) "+" else "-") + FormatUtils.inr(e.amount), style = MaterialTheme.typography.titleSmall, color = if (e.isCredit) SuccessGreen else DangerRed)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ExpensesScreen(
+    state: ErpUiState,
+    onSaveExpense: (ErpExpense) -> Unit,
+    onSoftDelete: (ErpExpense) -> Unit
+) {
+    var filterStatus by remember { mutableStateOf("all") }
+    var editing by remember { mutableStateOf<ErpExpense?>(null) }
+
+    val list = remember(state.expenses, filterStatus) {
+        state.expenses.filter { !it.isDeleted && (filterStatus == "all" || it.approvalStatus == filterStatus) }
+    }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Total Approved", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(FormatUtils.inr(list.filter { it.approvalStatus == "approved" }.sumOf { it.amount }), style = MaterialTheme.typography.titleLarge, color = DangerRed)
+                }
+                Button(
+                    onClick = { editing = ErpExpense(dateStr = FormatUtils.todayStr()) },
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    modifier = Modifier.testTag("expenses_add_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Expense")
+                }
+            }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("all" to "All", "approved" to "Approved", "pending" to "Pending", "rejected" to "Rejected")) { (k, lbl) ->
+                    FilterChip(selected = filterStatus == k, onClick = { filterStatus = k }, label = { Text(lbl) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White))
+                }
+            }
+
+            LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(list, key = { it.id }) { exp ->
+                    SwipeActionCard(onSwipeLeft = { onSoftDelete(exp) }, leftLabel = "Trash") {
+                        Card(onClick = { editing = exp }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(exp.title, style = MaterialTheme.typography.titleMedium)
+                                    Text("${exp.category} • ${exp.dateStr} • GST ITC ${FormatUtils.inr(exp.gstAmount)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(FormatUtils.inr(exp.amount), style = MaterialTheme.typography.titleMedium, color = DangerRed)
+                                    if (exp.approvalStatus == "pending") {
+                                        Row {
+                                            IconButton(onClick = { onSaveExpense(exp.copy(approvalStatus = "approved")) }) { Icon(Icons.Default.Check, contentDescription = "Approve", tint = SuccessGreen) }
+                                            IconButton(onClick = { onSaveExpense(exp.copy(approvalStatus = "rejected")) }) { Icon(Icons.Default.Close, contentDescription = "Reject", tint = DangerRed) }
+                                        }
+                                    } else {
+                                        ErpStatusBadge(exp.approvalStatus.uppercase(), if (exp.approvalStatus == "approved") SuccessSoft else DangerSoft, if (exp.approvalStatus == "approved") SuccessGreen else DangerRed)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editing?.let { initial ->
+        ExpenseEditorSheet(initial = initial, onDismiss = { editing = null }, onSave = { onSaveExpense(it); editing = null })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpenseEditorSheet(initial: ErpExpense, onDismiss: () -> Unit, onSave: (ErpExpense) -> Unit) {
+    var title by remember { mutableStateOf(initial.title) }
+    var category by remember { mutableStateOf(initial.category) }
+    var vendor by remember { mutableStateOf(initial.vendor) }
+    var amount by remember { mutableStateOf(if (initial.amount > 0) initial.amount.toString() else "") }
+    var gst by remember { mutableStateOf(if (initial.gstAmount > 0) initial.gstAmount.toString() else "") }
+    var payMode by remember { mutableStateOf(initial.paymentMode) }
+    var approval by remember { mutableStateOf(initial.approvalStatus) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(if (initial.id.isBlank()) "Record Expense" else "Edit Expense", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title *") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("expense_title_input"))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = vendor, onValueChange = { vendor = it }, label = { Text("Vendor") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount ₹ *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f).testTag("expense_amount_input"))
+                OutlinedTextField(value = gst, onValueChange = { gst = it }, label = { Text("GST ITC ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("upi", "cash", "bank", "card")) { m ->
+                    FilterChip(selected = payMode == m, onClick = { payMode = m }, label = { Text(m.uppercase()) })
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("approved", "pending", "rejected")) { st ->
+                    FilterChip(selected = approval == st, onClick = { approval = st }, label = { Text(st.replaceFirstChar { it.uppercase() }) })
+                }
+            }
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        onSave(initial.copy(title = title.trim(), category = category.ifBlank { "Operations" }.trim(), vendor = vendor.trim(), amount = amount.toDoubleOrNull() ?: 0.0, gstAmount = gst.toDoubleOrNull() ?: 0.0, paymentMode = payMode, approvalStatus = approval))
+                    }
+                },
+                enabled = title.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("expense_save_button")
+            ) { Text("Save Expense") }
+        }
+    }
+}

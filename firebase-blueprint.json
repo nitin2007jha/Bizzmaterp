@@ -1,0 +1,349 @@
+{
+  "entities": {
+    "BusinessSettings": {
+      "title": "BusinessSettings",
+      "description": "Business profile, tax configuration, bank/UPI details, invoice template, and module toggles.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessName": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "gstin": { "type": "string" },
+        "pan": { "type": "string" },
+        "address": { "type": "string" },
+        "state": { "type": "string" },
+        "bankName": { "type": "string" },
+        "accountNo": { "type": "string" },
+        "ifsc": { "type": "string" },
+        "upiId": { "type": "string" },
+        "invoicePrefix": { "type": "string" },
+        "nextInvoiceNumber": { "type": "integer" },
+        "invoiceTemplate": { "type": "string" },
+        "gstInclusive": { "type": "boolean" },
+        "dailyTarget": { "type": "number" },
+        "language": { "type": "string", "enum": ["en", "hi", "hinglish"] },
+        "pinLockEnabled": { "type": "boolean" },
+        "darkMode": { "type": "string", "enum": ["system", "light", "dark"] },
+        "storeSlug": { "type": "string" },
+        "storeTagline": { "type": "string" },
+        "storeEnabled": { "type": "boolean" },
+        "whatsappOrderPhone": { "type": "string" },
+        "storeThemeColor": { "type": "string" },
+        "enabledModules": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessName", "invoicePrefix", "nextInvoiceNumber", "invoiceTemplate", "createdAt", "updatedAt"]
+    },
+    "ErpInvoice": {
+      "title": "ErpInvoice",
+      "description": "Tax invoice, quotation, proforma, purchase bill, credit note, delivery challan, or draft.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "docType": { "type": "string", "enum": ["invoice", "quotation", "proforma", "purchase", "credit_note", "challan"] },
+        "status": { "type": "string", "enum": ["final", "draft", "cancelled"] },
+        "paymentStatus": { "type": "string", "enum": ["paid", "partial", "unpaid"] },
+        "paymentMode": { "type": "string", "enum": ["upi", "cash", "credit", "split", "bank"] },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "clientGstin": { "type": "string" },
+        "clientAddress": { "type": "string" },
+        "dateStr": { "type": "string" },
+        "dueDateStr": { "type": "string" },
+        "gstMode": { "type": "string", "enum": ["intra", "inter"] },
+        "gstInclusive": { "type": "boolean" },
+        "reverseCharge": { "type": "boolean" },
+        "subtotal": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "tdsAmount": { "type": "number" },
+        "shippingAmount": { "type": "number" },
+        "cgstTotal": { "type": "number" },
+        "sgstTotal": { "type": "number" },
+        "igstTotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "upiSplit": { "type": "number" },
+        "cashSplit": { "type": "number" },
+        "creditSplit": { "type": "number" },
+        "notes": { "type": "string" },
+        "templateId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "items": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "invoiceNumber", "docType", "status", "paymentStatus", "paymentMode", "clientName", "dateStr", "grandTotal", "items", "isDeleted", "createdAt", "updatedAt"]
+    },
+    "ErpProduct": {
+      "title": "ErpProduct",
+      "description": "Inventory product or billable service item.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "sku": { "type": "string" },
+        "barcode": { "type": "string" },
+        "hsnSac": { "type": "string" },
+        "category": { "type": "string" },
+        "isService": { "type": "boolean" },
+        "sellingPrice": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "gstPercent": { "type": "number" },
+        "stock": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "unit": { "type": "string" },
+        "durationMins": { "type": "integer" },
+        "batchNo": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "showInStore": { "type": "boolean" },
+        "description": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "isService", "sellingPrice", "gstPercent", "stock", "isDeleted", "createdAt", "updatedAt"]
+    },
+    "ErpClient": {
+      "title": "ErpClient",
+      "description": "CRM customer or vendor contact record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "gstin": { "type": "string" },
+        "address": { "type": "string" },
+        "state": { "type": "string" },
+        "openingBalance": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "birthday": { "type": "string" },
+        "notes": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "phone", "openingBalance", "isDeleted", "createdAt", "updatedAt"]
+    },
+    "ErpExpense": {
+      "title": "ErpExpense",
+      "description": "Business expense entry with GST input credit and approval status.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "vendor": { "type": "string" },
+        "amount": { "type": "number" },
+        "gstAmount": { "type": "number" },
+        "paymentMode": { "type": "string", "enum": ["cash", "upi", "bank", "card"] },
+        "dateStr": { "type": "string" },
+        "notes": { "type": "string" },
+        "approvalStatus": { "type": "string", "enum": ["approved", "pending", "rejected"] },
+        "submittedBy": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "category", "amount", "paymentMode", "dateStr", "approvalStatus", "isDeleted", "createdAt", "updatedAt"]
+    },
+    "ErpPurchaseOrder": {
+      "title": "ErpPurchaseOrder",
+      "description": "Vendor purchase order for restocking inventory.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "poNumber": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "vendorPhone": { "type": "string" },
+        "dateStr": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "sent", "received"] },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "poNumber", "vendorName", "dateStr", "status", "items", "totalAmount", "createdAt", "updatedAt"]
+    },
+    "ErpAppointment": {
+      "title": "ErpAppointment",
+      "description": "Scheduled client consultation or service appointment.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "dateStr": { "type": "string" },
+        "timeStr": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientName", "serviceName", "dateStr", "timeStr", "status", "createdAt", "updatedAt"]
+    },
+    "ErpBranch": {
+      "title": "ErpBranch",
+      "description": "Store or office branch location.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "manager": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "isActive", "createdAt", "updatedAt"]
+    },
+    "ErpEmployee": {
+      "title": "ErpEmployee",
+      "description": "Staff member with role and granular module permissions.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "role", "isActive", "permissions", "createdAt", "updatedAt"]
+    },
+    "ErpRecurringInvoice": {
+      "title": "ErpRecurringInvoice",
+      "description": "Automated recurring billing schedule.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "frequency": { "type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"] },
+        "nextRunDate": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientName", "frequency", "nextRunDate", "items", "totalAmount", "isActive", "createdAt", "updatedAt"]
+    },
+    "ErpWarranty": {
+      "title": "ErpWarranty",
+      "description": "Product warranty or AMC contract tracker.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["warranty", "amc"] },
+        "clientName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "productName": { "type": "string" },
+        "serialNo": { "type": "string" },
+        "startDate": { "type": "string" },
+        "months": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "clientName", "productName", "startDate", "months", "createdAt", "updatedAt"]
+    },
+    "ErpCoupon": {
+      "title": "ErpCoupon",
+      "description": "Storefront discount coupon.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "code": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "code", "discountPercent", "isActive", "createdAt", "updatedAt"]
+    },
+    "ErpOnlineOrder": {
+      "title": "ErpOnlineOrder",
+      "description": "Customer order placed via online storefront/catalog.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "address": { "type": "string" },
+        "itemsSummary": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "customerName", "totalAmount", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/config/{configId}": {
+      "schema": { "$ref": "#/entities/BusinessSettings" },
+      "description": "Owner business profile and ERP settings."
+    },
+    "/users/{userId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/ErpInvoice" },
+      "description": "All invoices, quotes, drafts, and billing documents."
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/ErpProduct" },
+      "description": "Inventory items and billable services."
+    },
+    "/users/{userId}/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/ErpClient" },
+      "description": "Client CRM records."
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/ErpExpense" },
+      "description": "Business expense records."
+    },
+    "/users/{userId}/purchase_orders/{poId}": {
+      "schema": { "$ref": "#/entities/ErpPurchaseOrder" },
+      "description": "Vendor purchase orders."
+    },
+    "/users/{userId}/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/ErpAppointment" },
+      "description": "Scheduled appointments."
+    },
+    "/users/{userId}/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/ErpBranch" },
+      "description": "Multi-branch business locations."
+    },
+    "/users/{userId}/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/ErpEmployee" },
+      "description": "Staff accounts and permissions."
+    },
+    "/users/{userId}/recurring/{recurringId}": {
+      "schema": { "$ref": "#/entities/ErpRecurringInvoice" },
+      "description": "Recurring invoice schedules."
+    },
+    "/users/{userId}/warranties/{warrantyId}": {
+      "schema": { "$ref": "#/entities/ErpWarranty" },
+      "description": "Warranty and AMC tracker entries."
+    },
+    "/users/{userId}/coupons/{couponId}": {
+      "schema": { "$ref": "#/entities/ErpCoupon" },
+      "description": "Storefront discount coupons."
+    },
+    "/users/{userId}/online_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/ErpOnlineOrder" },
+      "description": "Online store customer orders."
+    }
+  }
+}
