@@ -24,8 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -70,7 +72,7 @@ import com.example.ui.theme.WarningAmber
 import com.example.ui.theme.WarningSoft
 import com.example.ui.viewmodel.ErpUiState
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PurchaseOrdersScreen(
     state: ErpUiState,
@@ -78,11 +80,15 @@ fun PurchaseOrdersScreen(
     onReceivePo: (ErpPurchaseOrder) -> Unit
 ) {
     var showCreate by remember { mutableStateOf(false) }
+    var poFilter by remember { mutableStateOf("all") }
+    val filteredPos = remember(state.purchaseOrders, poFilter) {
+        state.purchaseOrders.filter { poFilter == "all" || it.status == poFilter }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Purchase Orders (${state.purchaseOrders.size})", style = MaterialTheme.typography.titleMedium)
+                Text("Purchase Orders (${filteredPos.size})", style = MaterialTheme.typography.titleMedium)
                 Button(
                     onClick = { showCreate = true },
                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
@@ -94,13 +100,24 @@ fun PurchaseOrdersScreen(
                 }
             }
 
-            if (state.purchaseOrders.isEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("all" to "All", "sent" to "Sent", "draft" to "Draft", "received" to "Received").forEach { (k, lbl) ->
+                    FilterChip(
+                        selected = poFilter == k,
+                        onClick = { poFilter = k },
+                        label = { Text(lbl) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                    )
+                }
+            }
+
+            if (filteredPos.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Text("No purchase orders yet. Create a PO to order stock from vendors.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("No purchase orders match this filter.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(state.purchaseOrders, key = { it.id }) { po ->
+                    items(filteredPos, key = { it.id }) { po ->
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -118,14 +135,23 @@ fun PurchaseOrdersScreen(
                                     }
                                 }
                                 if (po.status != "received") {
-                                    Button(
-                                        onClick = { onReceivePo(po) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
-                                        modifier = Modifier.fillMaxWidth().testTag("po_receive_${po.poNumber}")
-                                    ) {
-                                        Icon(Icons.Default.Inventory2, contentDescription = null)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Receive Stock into Inventory")
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { onReceivePo(po) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
+                                            modifier = Modifier.weight(1f).testTag("po_receive_${po.poNumber}")
+                                        ) {
+                                            Icon(Icons.Default.Inventory2, contentDescription = null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Receive Stock")
+                                        }
+                                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                                        OutlinedButton(onClick = {
+                                            val msg = "Purchase Order #${po.poNumber} for ${po.vendorName}\nTotal: ${FormatUtils.inr(po.totalAmount)}\nItems: ${po.items.joinToString { "${it.name} x${it.qty.toInt()}" }}"
+                                            FormatUtils.shareText(ctx, "PO ${po.poNumber}", msg)
+                                        }) {
+                                            Icon(Icons.Default.Share, contentDescription = "Share PO")
+                                        }
                                     }
                                 }
                             }
@@ -183,7 +209,7 @@ fun PurchaseOrdersScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AppointmentsScreen(
     state: ErpUiState,
@@ -191,24 +217,38 @@ fun AppointmentsScreen(
     onConvertToInvoice: (ErpInvoice) -> Unit
 ) {
     var showAdd by remember { mutableStateOf(false) }
+    var statusFilter by remember { mutableStateOf("all") }
+    val filteredAppts = remember(state.appointments, statusFilter) {
+        state.appointments.filter { statusFilter == "all" || it.status == statusFilter }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Appointments & Bookings", style = MaterialTheme.typography.titleMedium)
+                Text("Appointments (${filteredAppts.size})", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = { showAdd = true }, colors = ButtonDefaults.buttonColors(containerColor = TealPrimary), modifier = Modifier.testTag("appt_add_button")) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Book")
                 }
             }
-            if (state.appointments.isEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("all" to "All", "scheduled" to "Scheduled", "completed" to "Completed", "cancelled" to "Cancelled").forEach { (k, lbl) ->
+                    FilterChip(
+                        selected = statusFilter == k,
+                        onClick = { statusFilter = k },
+                        label = { Text(lbl) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                    )
+                }
+            }
+            if (filteredAppts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Text("No appointments booked yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("No appointments match this filter.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(state.appointments, key = { it.id }) { appt ->
+                    items(filteredAppts, key = { it.id }) { appt ->
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -222,14 +262,20 @@ fun AppointmentsScreen(
                                     }
                                 }
                                 if (appt.status == "scheduled") {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        OutlinedButton(
+                                            onClick = { onSaveAppointment(appt.copy(status = "cancelled")) },
+                                            modifier = Modifier.weight(0.8f)
+                                        ) {
+                                            Icon(Icons.Default.Cancel, contentDescription = null)
+                                        }
                                         OutlinedButton(
                                             onClick = { onSaveAppointment(appt.copy(status = "completed")) },
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Icon(Icons.Default.CheckCircle, contentDescription = null)
                                             Spacer(Modifier.width(4.dp))
-                                            Text("Complete")
+                                            Text("Done")
                                         }
                                         Button(
                                             onClick = {

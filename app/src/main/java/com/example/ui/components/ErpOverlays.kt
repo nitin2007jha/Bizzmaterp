@@ -134,10 +134,15 @@ val allModuleTiles = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreModulesSheet(
+    enabledModules: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onNavigate: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val visibleTiles = remember(enabledModules) {
+        if (enabledModules.isEmpty()) allModuleTiles
+        else allModuleTiles.filter { it.route == "settings" || it.route in enabledModules }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -162,7 +167,7 @@ fun MoreModulesSheet(
                 modifier = Modifier.heightIn(max = 460.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(allModuleTiles) { tile ->
+                items(visibleTiles) { tile ->
                     Surface(
                         onClick = {
                             onDismiss()

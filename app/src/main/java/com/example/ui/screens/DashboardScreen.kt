@@ -29,10 +29,14 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -168,6 +172,40 @@ fun DashboardScreen(
                                 ),
                                 modifier = Modifier.testTag("dash_filter_$key")
                             )
+                        }
+                    }
+
+                    val quickShortcuts = remember(state.settings.enabledModules) {
+                        val all = listOf(
+                            Triple("invoice", "New Bill", Icons.AutoMirrored.Filled.ReceiptLong),
+                            Triple("pos", "Quick POS", Icons.Default.PointOfSale),
+                            Triple("expenses", "Expense", Icons.Default.RequestQuote),
+                            Triple("gst", "GST Filing", Icons.Default.AccountBalance),
+                            Triple("daybook", "Daybook", Icons.Default.Book),
+                            Triple("reports", "Reports", Icons.AutoMirrored.Filled.TrendingUp),
+                            Triple("website", "Store", Icons.Default.Storefront)
+                        )
+                        val enabled = state.settings.enabledModules
+                        if (enabled.isEmpty()) all else all.filter { it.first in enabled }
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(quickShortcuts) { (route, label, icon) ->
+                            Surface(
+                                onClick = { onNavigate(route) },
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 1.dp,
+                                modifier = Modifier.testTag("dash_shortcut_$route")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(icon, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(16.dp))
+                                    Text(label, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
                         }
                     }
                 }

@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -89,14 +90,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.core.FormatUtils
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.EmeraldAccent
@@ -172,19 +176,19 @@ fun ErpTopBar(
                     )
                 }
             } else {
-                Box(
+                Surface(
                     modifier = Modifier
                         .padding(start = 4.dp, end = 10.dp)
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
+                        .size(40.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFEFFFF),
+                    shadowElevation = 2.dp
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Receipt,
-                        contentDescription = "Brand Emblem",
-                        tint = TealMint,
-                        modifier = Modifier.size(21.dp)
+                    Image(
+                        painter = painterResource(id = R.drawable.app_brand_logo),
+                        contentDescription = "My Business ERP Logo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(3.dp)
                     )
                 }
             }

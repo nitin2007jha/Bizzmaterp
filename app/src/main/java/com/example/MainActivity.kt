@@ -38,6 +38,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.core.FormatUtils
 import com.example.core.configureAppCheck
 import com.example.data.model.BusinessSettings
 import com.example.data.model.ErpInvoice
@@ -92,6 +93,8 @@ import kotlinx.coroutines.launch
 
 private val Context.erpPrefs by preferencesDataStore(name = "erp_local_prefs")
 private val KEY_PIN_CODE = stringPreferencesKey("erp_pin_code")
+private val KEY_PRINT_PAPER = stringPreferencesKey("erp_print_paper")
+private val KEY_DEFAULT_TERMS = stringPreferencesKey("erp_default_terms")
 
 private fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     val listener = FirebaseAuth.AuthStateListener { auth -> trySend(auth.currentUser) }
@@ -174,6 +177,12 @@ private fun MainErpApp(
     val savedPin by remember {
         context.erpPrefs.data.map { it[KEY_PIN_CODE] ?: "1234" }
     }.collectAsStateWithLifecycle(initialValue = "1234")
+    val paperSize by remember {
+        context.erpPrefs.data.map { it[KEY_PRINT_PAPER] ?: "a4" }
+    }.collectAsStateWithLifecycle(initialValue = "a4")
+    val defaultTerms by remember {
+        context.erpPrefs.data.map { it[KEY_DEFAULT_TERMS] ?: "" }
+    }.collectAsStateWithLifecycle(initialValue = "")
 
     var currentRoute by rememberSaveable { mutableStateOf("dashboard") }
     var editingInvoice by remember { mutableStateOf<ErpInvoice?>(null) }
@@ -348,12 +357,25 @@ private fun MainErpApp(
                                     )
                                     "records" -> RecordsScreen(
                                         state = uiState,
+                                        paperSize = paperSize,
+                                        defaultTerms = defaultTerms,
                                         onNewInvoice = {
                                             editingInvoice = null
                                             currentRoute = "invoice"
                                         },
                                         onEditInvoice = { inv ->
                                             editingInvoice = inv
+                                            currentRoute = "invoice"
+                                        },
+                                        onDuplicateInvoice = { inv ->
+                                            editingInvoice = inv.copy(
+                                                id = "",
+                                                invoiceNumber = "",
+                                                dateStr = FormatUtils.todayStr(),
+                                                paidAmount = 0.0,
+                                                status = "pending",
+                                                createdAt = null
+                                            )
                                             currentRoute = "invoice"
                                         },
                                         onMarkPaid = viewModel::markInvoicePaid,
@@ -363,10 +385,16 @@ private fun MainErpApp(
                                     "invoice" -> InvoiceBuilderScreen(
                                         state = uiState,
                                         editingInvoice = editingInvoice,
+                                        defaultTerms = defaultTerms,
+                                        paperSize = paperSize,
+                                        onQuickAddClient = viewModel::saveClient,
                                         onSaveInvoice = { inv, incCounter, decStock ->
                                             viewModel.saveInvoice(inv, incCounter, decStock)
                                             editingInvoice = null
                                             currentRoute = "records"
+                                        },
+                                        onPrintMessage = { msg, err ->
+                                            viewModel.emitToast(msg, isError = err)
                                         },
                                         onCancel = {
                                             editingInvoice = null
@@ -375,6 +403,9 @@ private fun MainErpApp(
                                     )
                                     "pos" -> PosScreen(
                                         state = uiState,
+                                        paperSize = paperSize,
+                                        onQuickAddClient = viewModel::saveClient,
+                                        onPrintMessage = { msg, err -> viewModel.emitToast(msg, isError = err) },
                                         onCheckoutInvoice = { inv ->
                                             viewModel.saveInvoice(inv, incrementCounter = true, decrementStock = true)
                                         }
@@ -400,7 +431,10 @@ private fun MainErpApp(
                                         onSaveClient = viewModel::saveClient,
                                         onSoftDelete = { viewModel.softDeleteClient(it, true) }
                                     )
-                                    "daybook" -> DaybookScreen(state = uiState)
+                                    "daybook" -> DaybookScreen(
+                                        state = uiState,
+                                        onExportMessage = { viewModel.emitToast(it) }
+                                    )
                                     "expenses" -> ExpensesScreen(
                                         state = uiState,
                                         onSaveExpense = viewModel::saveExpense,
@@ -454,7 +488,10 @@ private fun MainErpApp(
                                         onSaveSettings = viewModel::saveSettings,
                                         onSaveProduct = viewModel::saveProduct,
                                         onSaveCoupon = viewModel::saveCoupon,
-                                        onSaveOrder = viewModel::saveOnlineOrder
+                                        onSaveOrder = viewModel::saveOnlineOrder,
+                                        onConvertOrderToInvoice = { inv ->
+                                            viewModel.saveInvoice(inv, incrementCounter = true, decrementStock = true)
+                                        }
                                     )
                                     "data-module" -> DataModuleScreen(
                                         state = uiState,
@@ -471,10 +508,16 @@ private fun MainErpApp(
                                         state = uiState,
                                         userEmail = user.email ?: user.displayName ?: "Signed in",
                                         pinCode = savedPin,
+                                        paperSize = paperSize,
+                                        defaultTerms = defaultTerms,
                                         onSaveSettings = viewModel::saveSettings,
-                                        onSavePinCode = { newPin ->
+                                        onSaveLocalPrefs = { newPin, paper, terms ->
                                             scope.launch {
-                                                context.erpPrefs.edit { it[KEY_PIN_CODE] = newPin }
+                                                context.erpPrefs.edit {
+                                                    it[KEY_PIN_CODE] = newPin
+                                                    it[KEY_PRINT_PAPER] = paper
+                                                    it[KEY_DEFAULT_TERMS] = terms
+                                                }
                                             }
                                         },
                                         onOpenTrash = { currentRoute = "recycle-bin" },
@@ -509,6 +552,7 @@ private fun MainErpApp(
 
     if (showMoreSheet) {
         MoreModulesSheet(
+            enabledModules = uiState.settings.enabledModules,
             onDismiss = { showMoreSheet = false },
             onNavigate = { target ->
                 editingInvoice = null

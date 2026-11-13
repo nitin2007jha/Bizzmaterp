@@ -1,0 +1,192 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "APK build variant"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - debug
+          - release
+          - both
+      build_aab:
+        description: "Also build Play Store App Bundle (.aab)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build My Business ERP APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Prepare signing keystores & optional secrets
+        id: prep
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              base64 -d debug.keystore.base64 > debug.keystore
+              echo "Decoded debug.keystore from debug.keystore.base64"
+            else
+              keytool -genkey -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+              echo "Generated fallback debug.keystore"
+            fi
+          fi
+
+          if [ ! -f app/google-services.json ] && [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
+            echo "Decoded app/google-services.json from secret"
+          fi
+
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+            echo "store_password=$STORE_PASSWORD" >> "$GITHUB_OUTPUT"
+            echo "key_password=$KEY_PASSWORD" >> "$GITHUB_OUTPUT"
+            echo "signing_mode=production" >> "$GITHUB_OUTPUT"
+            echo "Decoded production release keystore my-upload-key.jks"
+          else
+            CI_PASS="MyBizErpCI2026"
+            keytool -genkey -v \
+              -keystore my-upload-key.jks \
+              -storepass "$CI_PASS" \
+              -alias upload \
+              -keypass "$CI_PASS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=My Business ERP CI,O=MyBusinessERP,C=IN"
+            echo "store_password=$CI_PASS" >> "$GITHUB_OUTPUT"
+            echo "key_password=$CI_PASS" >> "$GITHUB_OUTPUT"
+            echo "signing_mode=ci-ephemeral" >> "$GITHUB_OUTPUT"
+            echo "::notice::Using CI fallback upload keystore for release build. Add RELEASE_KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD secrets for Play Store production signing."
+          fi
+
+      - name: Build Debug APK
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Upload Debug APK artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-business-erp-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build Release APK
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'both')) }}
+        env:
+          STORE_PASSWORD: ${{ steps.prep.outputs.store_password }}
+          KEY_PASSWORD: ${{ steps.prep.outputs.key_password }}
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            gradle assembleRelease --no-daemon --stacktrace
+          fi
+
+      - name: Upload Release APK artifact
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'both')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-business-erp-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build Release App Bundle (.aab)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_aab == true }}
+        env:
+          STORE_PASSWORD: ${{ steps.prep.outputs.store_password }}
+          KEY_PASSWORD: ${{ steps.prep.outputs.key_password }}
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew bundleRelease --no-daemon --stacktrace
+          else
+            gradle bundleRelease --no-daemon --stacktrace
+          fi
+
+      - name: Upload App Bundle (.aab) artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_aab == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-business-erp-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release (on v* tags)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+
+      - name: Write APK Build Summary
+        if: ${{ always() }}
+        run: |
+          echo "### My Business ERP — APK Build Summary (${{ steps.prep.outputs.signing_mode }})" >> "$GITHUB_STEP_SUMMARY"
+          for apk in app/build/outputs/apk/*/*.apk app/build/outputs/bundle/*/*.aab; do
+            if [ -f "$apk" ]; then
+              size=$(du -h "$apk" | cut -f1)
+              sha=$(sha256sum "$apk" | cut -d' ' -f1)
+              echo "- **$(basename "$apk")** ($size) — SHA-256: \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done

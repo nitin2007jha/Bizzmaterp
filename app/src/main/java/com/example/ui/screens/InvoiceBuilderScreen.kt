@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,21 +27,22 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,11 +59,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.core.FormatUtils
+import com.example.data.model.ErpClient
 import com.example.data.model.ErpInvoice
 import com.example.data.model.InvoiceLineItem
 import com.example.data.model.InvoiceTemplates
@@ -71,14 +74,19 @@ import com.example.ui.theme.EmeraldAccent
 import com.example.ui.theme.TealPrimary
 import com.example.ui.viewmodel.ErpUiState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InvoiceBuilderScreen(
     state: ErpUiState,
     editingInvoice: ErpInvoice?,
+    defaultTerms: String = "",
+    paperSize: String = "a4",
+    onQuickAddClient: (ErpClient) -> Unit = {},
     onSaveInvoice: (ErpInvoice, Boolean, Boolean) -> Unit,
+    onPrintMessage: (String, Boolean) -> Unit = { _, _ -> },
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
     val settings = state.settings
     val defaultNumber = remember(editingInvoice, settings.invoicePrefix, settings.nextInvoiceNumber) {
         editingInvoice?.invoiceNumber?.ifBlank { null }
@@ -89,6 +97,7 @@ fun InvoiceBuilderScreen(
     var docType by remember(editingInvoice) { mutableStateOf(editingInvoice?.docType ?: "invoice") }
     var dateStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.dateStr?.ifBlank { FormatUtils.todayStr() } ?: FormatUtils.todayStr()) }
     var dueDateStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.dueDateStr ?: "") }
+    var branchId by remember(editingInvoice) { mutableStateOf(editingInvoice?.branchId ?: "") }
     var clientId by remember(editingInvoice) { mutableStateOf(editingInvoice?.clientId ?: "") }
     var clientName by remember(editingInvoice) { mutableStateOf(editingInvoice?.clientName ?: "") }
     var clientPhone by remember(editingInvoice) { mutableStateOf(editingInvoice?.clientPhone ?: "") }
@@ -99,13 +108,14 @@ fun InvoiceBuilderScreen(
     var reverseCharge by remember(editingInvoice) { mutableStateOf(editingInvoice?.reverseCharge ?: false) }
     var paymentMode by remember(editingInvoice) { mutableStateOf(editingInvoice?.paymentMode ?: "upi") }
     var paymentStatus by remember(editingInvoice) { mutableStateOf(editingInvoice?.paymentStatus ?: "paid") }
+    var partialPaidStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.paidAmount?.takeIf { it > 0 }?.toString() ?: "") }
     var discountStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.discountAmount?.takeIf { it > 0 }?.toString() ?: "") }
     var tdsStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.tdsAmount?.takeIf { it > 0 }?.toString() ?: "") }
     var shippingStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.shippingAmount?.takeIf { it > 0 }?.toString() ?: "") }
     var upiSplitStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.upiSplit?.takeIf { it > 0 }?.toString() ?: "") }
     var cashSplitStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.cashSplit?.takeIf { it > 0 }?.toString() ?: "") }
     var creditSplitStr by remember(editingInvoice) { mutableStateOf(editingInvoice?.creditSplit?.takeIf { it > 0 }?.toString() ?: "") }
-    var notes by remember(editingInvoice) { mutableStateOf(editingInvoice?.notes ?: "") }
+    var notes by remember(editingInvoice, defaultTerms) { mutableStateOf(editingInvoice?.notes ?: defaultTerms) }
     var templateId by remember(editingInvoice) { mutableStateOf(editingInvoice?.templateId?.ifBlank { settings.invoiceTemplate } ?: settings.invoiceTemplate) }
 
     val lineItems = remember(editingInvoice) {
@@ -116,7 +126,9 @@ fun InvoiceBuilderScreen(
 
     var showClientPicker by remember { mutableStateOf(false) }
     var showCatalogPicker by remember { mutableStateOf(false) }
-    var showCustomItemDialog by remember { mutableStateOf(false) }
+    var showLineEditor by remember { mutableStateOf(false) }
+    var editingLineIndex by remember { mutableIntStateOf(-1) }
+    var showPreviewSheet by remember { mutableStateOf(false) }
 
     // Tax & total calculations
     val rawSum = lineItems.sumOf { it.qty * it.rate }
@@ -142,9 +154,10 @@ fun InvoiceBuilderScreen(
         val cashSplit = cashSplitStr.toDoubleOrNull() ?: 0.0
         val creditSplit = creditSplitStr.toDoubleOrNull() ?: 0.0
         val paidAmt = when {
-            paymentStatus == "paid" -> grandTotal
+            paymentMode == "credit" -> 0.0
             paymentMode == "split" -> (upiSplit + cashSplit).coerceAtMost(grandTotal)
-            paymentStatus == "partial" -> (grandTotal * 0.5)
+            paymentStatus == "paid" -> grandTotal
+            paymentStatus == "partial" -> (partialPaidStr.toDoubleOrNull() ?: (grandTotal * 0.5)).coerceIn(0.0, grandTotal)
             else -> 0.0
         }
         return ErpInvoice(
@@ -179,9 +192,25 @@ fun InvoiceBuilderScreen(
             creditSplit = creditSplit,
             notes = notes,
             templateId = templateId,
+            branchId = branchId,
             items = lineItems.toList(),
             createdAt = editingInvoice?.createdAt
         )
+    }
+
+    fun applySelectedClient(cli: ErpClient) {
+        clientId = cli.id
+        clientName = cli.name
+        clientPhone = cli.phone
+        clientGstin = cli.gstin
+        clientAddress = cli.address
+        val bizPrefix = settings.gstin.trim().take(2)
+        val cliPrefix = cli.gstin.trim().take(2)
+        if (bizPrefix.length == 2 && cliPrefix.length == 2) {
+            gstMode = if (bizPrefix == cliPrefix) "intra" else "inter"
+        } else if (settings.state.isNotBlank() && cli.state.isNotBlank()) {
+            gstMode = if (settings.state.equals(cli.state, ignoreCase = true)) "intra" else "inter"
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -217,7 +246,7 @@ fun InvoiceBuilderScreen(
                 }
             }
 
-            // Number, Date, Client
+            // Number, Dates, Branch & Customer Selection
             item {
                 Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -237,6 +266,38 @@ fun InvoiceBuilderScreen(
                                 modifier = Modifier.weight(1f)
                             )
                         }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = dueDateStr,
+                                onValueChange = { dueDateStr = it },
+                                label = { Text("Due Date") },
+                                placeholder = { Text("YYYY-MM-DD") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf(7 to "+7d", 15 to "+15d", 30 to "+30d").forEach { (days, lbl) ->
+                                    AssistChip(
+                                        onClick = { dueDateStr = FormatUtils.addDaysToDateStr(dateStr, days) },
+                                        label = { Text(lbl) }
+                                    )
+                                }
+                            }
+                        }
+
+                        val activeBranches = state.branches.filter { it.isActive }
+                        if (activeBranches.isNotEmpty()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                item {
+                                    FilterChip(selected = branchId.isBlank(), onClick = { branchId = "" }, label = { Text("Main Branch") })
+                                }
+                                items(activeBranches) { br ->
+                                    FilterChip(selected = branchId == br.id, onClick = { branchId = br.id }, label = { Text(br.name) })
+                                }
+                            }
+                        }
+
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
                                 value = clientName,
@@ -249,7 +310,7 @@ fun InvoiceBuilderScreen(
                                 onClick = { showClientPicker = true },
                                 modifier = Modifier.height(54.dp).testTag("invoice_pick_client_button")
                             ) {
-                                Icon(Icons.Default.PersonAdd, contentDescription = "Pick Client")
+                                Icon(Icons.Default.PersonAdd, contentDescription = "Pick Customer")
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,6 +330,13 @@ fun InvoiceBuilderScreen(
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                        OutlinedTextField(
+                            value = clientAddress,
+                            onValueChange = { clientAddress = it },
+                            label = { Text("Billing Address") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -284,9 +352,13 @@ fun InvoiceBuilderScreen(
                         ) {
                             Text("Items (${lineItems.size})", style = MaterialTheme.typography.titleMedium)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                TextButton(onClick = { showCustomItemDialog = true }, modifier = Modifier.testTag("invoice_add_custom_item_button")) {
-                                    Text("+ Custom")
-                                }
+                                TextButton(
+                                    onClick = {
+                                        editingLineIndex = -1
+                                        showLineEditor = true
+                                    },
+                                    modifier = Modifier.testTag("invoice_add_custom_item_button")
+                                ) { Text("+ Custom") }
                                 Button(
                                     onClick = { showCatalogPicker = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
@@ -307,16 +379,35 @@ fun InvoiceBuilderScreen(
                             )
                         } else {
                             lineItems.forEachIndexed { idx, item ->
+                                val gross = item.qty * item.rate
+                                val taxable = if (gstInclusive && item.gstPercent > 0) gross / (1.0 + item.gstPercent / 100.0) else gross
+                                val taxAmt = if (gstInclusive && item.gstPercent > 0) gross - taxable else taxable * (item.gstPercent / 100.0)
+                                val lineTotal = taxable + taxAmt
+
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            editingLineIndex = idx
+                                            showLineEditor = true
+                                        }
+                                        .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(item.name, style = MaterialTheme.typography.titleSmall)
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(item.name, style = MaterialTheme.typography.titleSmall)
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit Line", modifier = Modifier.size(13.dp), tint = TealPrimary)
+                                        }
                                         Text(
-                                            text = "${item.qty} × ${FormatUtils.inr(item.rate)} • GST ${item.gstPercent.toInt()}%",
+                                            text = "${item.qty} × ${FormatUtils.inr(item.rate)} • Tax ${FormatUtils.inr(taxAmt)} (${item.gstPercent.toInt()}%)",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Line Total: ${FormatUtils.inr(lineTotal)}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = TealPrimary
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -345,16 +436,8 @@ fun InvoiceBuilderScreen(
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("GST & Charges", style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = gstMode == "intra",
-                                onClick = { gstMode = "intra" },
-                                label = { Text("Intra-State (CGST+SGST)") }
-                            )
-                            FilterChip(
-                                selected = gstMode == "inter",
-                                onClick = { gstMode = "inter" },
-                                label = { Text("Inter-State (IGST)") }
-                            )
+                            FilterChip(selected = gstMode == "intra", onClick = { gstMode = "intra" }, label = { Text("Intra-State (CGST+SGST)") })
+                            FilterChip(selected = gstMode == "inter", onClick = { gstMode = "inter" }, label = { Text("Inter-State (IGST)") })
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Prices include GST (Inclusive)", style = MaterialTheme.typography.bodyMedium)
@@ -365,30 +448,9 @@ fun InvoiceBuilderScreen(
                             Switch(checked = reverseCharge, onCheckedChange = { reverseCharge = it })
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = discountStr,
-                                onValueChange = { discountStr = it },
-                                label = { Text("Discount ₹") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = tdsStr,
-                                onValueChange = { tdsStr = it },
-                                label = { Text("TDS ₹") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = shippingStr,
-                                onValueChange = { shippingStr = it },
-                                label = { Text("Shipping ₹") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
+                            OutlinedTextField(value = discountStr, onValueChange = { discountStr = it }, label = { Text("Discount ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = tdsStr, onValueChange = { tdsStr = it }, label = { Text("TDS ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = shippingStr, onValueChange = { shippingStr = it }, label = { Text("Shipping ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -425,6 +487,16 @@ fun InvoiceBuilderScreen(
                                     FilterChip(selected = paymentStatus == st, onClick = { paymentStatus = st }, label = { Text(lbl) })
                                 }
                             }
+                            if (paymentStatus == "partial") {
+                                OutlinedTextField(
+                                    value = partialPaidStr,
+                                    onValueChange = { partialPaidStr = it },
+                                    label = { Text("Amount Paid Now ₹ (Default 50%)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
 
                         Text("Choose Template (${InvoiceTemplates.all.size})", style = MaterialTheme.typography.labelLarge)
@@ -435,11 +507,7 @@ fun InvoiceBuilderScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
-                                        .border(
-                                            width = if (selected) 2.dp else 1.dp,
-                                            color = if (selected) TealPrimary else MaterialTheme.colorScheme.outline,
-                                            shape = RoundedCornerShape(12.dp)
-                                        )
+                                        .border(if (selected) 2.dp else 1.dp, if (selected) TealPrimary else MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
                                         .clickable { templateId = tpl.id }
                                         .padding(8.dp)
                                 ) {
@@ -453,14 +521,14 @@ fun InvoiceBuilderScreen(
                         OutlinedTextField(
                             value = notes,
                             onValueChange = { notes = it },
-                            label = { Text("Notes / Terms") },
+                            label = { Text("Notes / Terms & Conditions") },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
             }
 
-            // Summary + Save Actions
+            // Summary + Save & Print Actions
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -471,30 +539,90 @@ fun InvoiceBuilderScreen(
                             Text("Taxable Subtotal")
                             Text(FormatUtils.inr(subtotal))
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(if (gstMode == "inter") "IGST" else "CGST + SGST")
-                            Text(FormatUtils.inr(cgst + sgst + igst))
+                        if (gstMode == "inter") {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("IGST")
+                                Text(FormatUtils.inr(igst))
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("CGST + SGST")
+                                Text("${FormatUtils.inr(cgst)} + ${FormatUtils.inr(sgst)}")
+                            }
                         }
+                        if (discount > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Discount")
+                                Text("-${FormatUtils.inr(discount)}")
+                            }
+                        }
+                        if (shipping > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Shipping")
+                                Text(FormatUtils.inr(shipping))
+                            }
+                        }
+                        if (tds > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("TDS Deducted")
+                                Text("-${FormatUtils.inr(tds)}")
+                            }
+                        }
+                        HorizontalDivider()
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Grand Total", style = MaterialTheme.typography.titleLarge, color = TealPrimary)
                             Text(FormatUtils.inr(grandTotal), style = MaterialTheme.typography.titleLarge, color = TealPrimary)
                         }
+                        Text(
+                            text = FormatUtils.amountInWordsInr(grandTotal),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
                     }
                 }
+
                 Spacer(Modifier.height(10.dp))
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { showPreviewSheet = true },
+                        enabled = lineItems.isNotEmpty(),
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("invoice_preview_button")
+                    ) {
+                        Icon(Icons.Default.Visibility, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Preview")
+                    }
                     OutlinedButton(
                         onClick = { onSaveInvoice(buildInvoice("draft"), false, false) },
                         enabled = lineItems.isNotEmpty(),
-                        modifier = Modifier.weight(1f).height(52.dp).testTag("invoice_save_draft_button")
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("invoice_save_draft_button")
+                    ) { Text("Save Draft") }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            val inv = buildInvoice("final")
+                            onSaveInvoice(inv, editingInvoice == null, editingInvoice == null)
+                            FormatUtils.printInvoice(context, inv, settings, paperSize, defaultTerms)
+                                .onFailure { onPrintMessage(it.localizedMessage ?: "Print unavailable", true) }
+                        },
+                        enabled = lineItems.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                        modifier = Modifier.weight(1f).height(52.dp).testTag("invoice_save_print_button")
                     ) {
-                        Text("Save Draft")
+                        Icon(Icons.Default.Print, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Save & Print")
                     }
                     Button(
                         onClick = { onSaveInvoice(buildInvoice("final"), editingInvoice == null, editingInvoice == null) },
                         enabled = lineItems.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
-                        modifier = Modifier.weight(1.4f).height(52.dp).testTag("invoice_finalize_button")
+                        modifier = Modifier.weight(1.2f).height(52.dp).testTag("invoice_finalize_button")
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -508,107 +636,80 @@ fun InvoiceBuilderScreen(
     }
 
     if (showClientPicker) {
-        ModalBottomSheet(onDismissRequest = { showClientPicker = false }) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Select Client", style = MaterialTheme.typography.titleLarge)
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.clients.filter { !it.isDeleted }) { cli ->
-                        Card(
-                            onClick = {
-                                clientId = cli.id
-                                clientName = cli.name
-                                clientPhone = cli.phone
-                                clientGstin = cli.gstin
-                                clientAddress = cli.address
-                                showClientPicker = false
-                            },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column {
-                                    Text(cli.name, style = MaterialTheme.typography.titleSmall)
-                                    Text(cli.phone.ifBlank { cli.address }, style = MaterialTheme.typography.bodySmall)
-                                }
-                                if (cli.gstin.isNotBlank()) Text(cli.gstin, style = MaterialTheme.typography.labelSmall, color = TealPrimary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        ClientPickerSheet(
+            clients = state.clients,
+            onSelectClient = { cli ->
+                applySelectedClient(cli)
+                showClientPicker = false
+            },
+            onQuickCreateClient = { newCli ->
+                onQuickAddClient(newCli)
+                applySelectedClient(newCli)
+            },
+            onDismiss = { showClientPicker = false }
+        )
     }
 
     if (showCatalogPicker) {
-        ModalBottomSheet(onDismissRequest = { showCatalogPicker = false }) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Add from Catalog", style = MaterialTheme.typography.titleLarge)
-                LazyColumn(modifier = Modifier.heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.products.filter { !it.isDeleted }) { prod ->
-                        Card(
-                            onClick = {
-                                val existingIdx = lineItems.indexOfFirst { it.productId == prod.id && prod.id.isNotBlank() }
-                                if (existingIdx >= 0) {
-                                    val old = lineItems[existingIdx]
-                                    lineItems[existingIdx] = old.copy(qty = old.qty + 1)
-                                } else {
-                                    lineItems += InvoiceLineItem(
-                                        productId = prod.id,
-                                        name = prod.name,
-                                        hsnSac = prod.hsnSac,
-                                        qty = 1.0,
-                                        rate = prod.sellingPrice,
-                                        gstPercent = prod.gstPercent,
-                                        isService = prod.isService
-                                    )
-                                }
-                                showCatalogPicker = false
-                            },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(prod.name, style = MaterialTheme.typography.titleSmall)
-                                    Text(if (prod.isService) "Service" else "Stock: ${prod.stock.toInt()} ${prod.unit}", style = MaterialTheme.typography.bodySmall)
-                                }
-                                Text("${FormatUtils.inr(prod.sellingPrice)} (+${prod.gstPercent.toInt()}%)", style = MaterialTheme.typography.titleSmall, color = TealPrimary)
-                            }
-                        }
-                    }
+        CatalogItemPickerSheet(
+            products = state.products,
+            onSelectProduct = { prod ->
+                val existingIdx = lineItems.indexOfFirst { it.productId == prod.id && prod.id.isNotBlank() }
+                if (existingIdx >= 0) {
+                    val old = lineItems[existingIdx]
+                    lineItems[existingIdx] = old.copy(qty = old.qty + 1)
+                } else {
+                    lineItems += InvoiceLineItem(
+                        productId = prod.id,
+                        name = prod.name,
+                        hsnSac = prod.hsnSac,
+                        qty = 1.0,
+                        rate = prod.sellingPrice,
+                        gstPercent = prod.gstPercent,
+                        isService = prod.isService
+                    )
                 }
-            }
-        }
+                showCatalogPicker = false
+            },
+            onDismiss = { showCatalogPicker = false }
+        )
     }
 
-    if (showCustomItemDialog) {
-        var cName by remember { mutableStateOf("") }
-        var cRate by remember { mutableStateOf("") }
-        var cQty by remember { mutableStateOf("1") }
-        var cGst by remember { mutableStateOf("18") }
-        AlertDialog(
-            onDismissRequest = { showCustomItemDialog = false },
-            title = { Text("Add Custom Line Item") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = cName, onValueChange = { cName = it }, label = { Text("Item / Service Name") }, singleLine = true)
-                    OutlinedTextField(value = cRate, onValueChange = { cRate = it }, label = { Text("Rate (₹)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = cQty, onValueChange = { cQty = it }, label = { Text("Qty") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = cGst, onValueChange = { cGst = it }, label = { Text("GST %") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
-                    }
+    if (showLineEditor) {
+        LineItemEditorDialog(
+            initial = lineItems.getOrNull(editingLineIndex),
+            onSave = { item ->
+                if (editingLineIndex in lineItems.indices) {
+                    lineItems[editingLineIndex] = item
+                } else {
+                    lineItems += item
                 }
+                showLineEditor = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    val r = cRate.toDoubleOrNull() ?: 0.0
-                    val q = (cQty.toDoubleOrNull() ?: 1.0).coerceAtLeast(1.0)
-                    val g = cGst.toDoubleOrNull() ?: 0.0
-                    if (cName.isNotBlank()) {
-                        lineItems += InvoiceLineItem(name = cName.trim(), qty = q, rate = r, gstPercent = g)
-                    }
-                    showCustomItemDialog = false
-                }) { Text("Add") }
+            onDismiss = { showLineEditor = false }
+        )
+    }
+
+    if (showPreviewSheet) {
+        val previewInv = buildInvoice("final")
+        InvoicePreviewSheet(
+            invoice = previewInv,
+            settings = settings,
+            onPrint = {
+                FormatUtils.printInvoice(context, previewInv, settings, paperSize, defaultTerms)
+                    .onFailure { onPrintMessage(it.localizedMessage ?: "Print failed", true) }
             },
-            dismissButton = { TextButton(onClick = { showCustomItemDialog = false }) { Text("Cancel") } }
+            onExportPdf = {
+                FormatUtils.exportAndShareInvoicePdf(context, previewInv, settings, paperSize, defaultTerms)
+                    .onFailure { onPrintMessage(it.localizedMessage ?: "PDF export failed", true) }
+            },
+            onSaveAndPrint = {
+                showPreviewSheet = false
+                onSaveInvoice(previewInv, editingInvoice == null, editingInvoice == null)
+                FormatUtils.printInvoice(context, previewInv, settings, paperSize, defaultTerms)
+                    .onFailure { onPrintMessage(it.localizedMessage ?: "Print failed", true) }
+            },
+            onDismiss = { showPreviewSheet = false }
         )
     }
 }

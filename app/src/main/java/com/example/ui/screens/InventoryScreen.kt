@@ -82,6 +82,7 @@ fun InventoryScreen(
 ) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
     var lowStockOnly by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf<ErpProduct?>(null) }
     var showEditor by remember { mutableStateOf(false) }
@@ -97,10 +98,19 @@ fun InventoryScreen(
         }
     }
 
-    val list = remember(state.products, servicesOnly, query, lowStockOnly) {
+    val categories = remember(state.products, servicesOnly) {
+        listOf("All") + state.products
+            .filter { !it.isDeleted && it.isService == servicesOnly }
+            .map { it.category.ifBlank { "General" } }
+            .distinct()
+            .sorted()
+    }
+
+    val list = remember(state.products, servicesOnly, query, selectedCategory, lowStockOnly) {
         val q = query.trim().lowercase()
         state.products
             .filter { !it.isDeleted && it.isService == servicesOnly }
+            .filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
             .filter { !lowStockOnly || (!it.isService && it.stock <= it.lowStockThreshold) }
             .filter { p ->
                 q.isBlank() ||
@@ -152,6 +162,19 @@ fun InventoryScreen(
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Add")
+                }
+            }
+
+            if (categories.size > 1) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(categories) { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(cat) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                        )
+                    }
                 }
             }
 
@@ -319,6 +342,9 @@ private fun ProductEditorSheet(
     var lowThresh by remember { mutableStateOf(initial.lowStockThreshold.toInt().toString()) }
     var unit by remember { mutableStateOf(initial.unit) }
     var duration by remember { mutableStateOf(initial.durationMins.toString()) }
+    var batchNo by remember { mutableStateOf(initial.batchNo) }
+    var expiryDate by remember { mutableStateOf(initial.expiryDate) }
+    var description by remember { mutableStateOf(initial.description) }
     var showInStore by remember { mutableStateOf(initial.showInStore) }
 
     ModalBottomSheet(
@@ -357,9 +383,14 @@ private fun ProductEditorSheet(
                     OutlinedTextField(value = sku, onValueChange = { sku = it }, label = { Text("SKU") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("Barcode") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = batchNo, onValueChange = { batchNo = it }, label = { Text("Batch #") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = expiryDate, onValueChange = { expiryDate = it }, label = { Text("Expiry (YYYY-MM-DD)") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
             } else {
                 OutlinedTextField(value = duration, onValueChange = { duration = it }, label = { Text("Duration (mins)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
             }
+            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Notes") }, modifier = Modifier.fillMaxWidth())
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Show in Online Storefront", style = MaterialTheme.typography.bodyMedium)
@@ -383,6 +414,9 @@ private fun ProductEditorSheet(
                                 lowStockThreshold = lowThresh.toDoubleOrNull() ?: 10.0,
                                 unit = unit.ifBlank { "pcs" }.trim(),
                                 durationMins = duration.toLongOrNull() ?: 30L,
+                                batchNo = batchNo.trim(),
+                                expiryDate = expiryDate.trim(),
+                                description = description.trim(),
                                 showInStore = showInStore
                             )
                         )

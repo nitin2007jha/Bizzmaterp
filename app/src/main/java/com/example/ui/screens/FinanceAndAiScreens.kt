@@ -84,6 +84,7 @@ fun GstCenterScreen(
                         "dashboard" to "Dashboard",
                         "gstr1" to "GSTR-1",
                         "gstr3b" to "GSTR-3B",
+                        "hsn" to "HSN Summary",
                         "itc" to "ITC Credit",
                         "calc" to "Calculator",
                         "calendar" to "Calendar"
@@ -179,6 +180,31 @@ fun GstCenterScreen(
                     }
                 }
 
+                "hsn" -> {
+                    val hsnGroups = finalInvoices.flatMap { inv ->
+                        inv.items.map { item ->
+                            val key = item.hsnSac.ifBlank { "UNSPECIFIED" }
+                            val taxable = item.qty * item.rate
+                            val tax = taxable * (item.gstPercent / 100.0)
+                            Triple(key, item.qty, taxable + tax)
+                        }
+                    }.groupBy { it.first }
+                    item {
+                        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("HSN / SAC Outward Summary (${hsnGroups.size})", style = MaterialTheme.typography.titleMedium)
+                                if (hsnGroups.isEmpty()) {
+                                    Text("Finalize invoices with HSN/SAC codes to populate this summary.", style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    hsnGroups.forEach { (hsn, rows) ->
+                                        SummaryRow("$hsn (${rows.sumOf { it.second }.toInt()} qty)", FormatUtils.inr(rows.sumOf { it.third }), TealPrimary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 "itc" -> {
                     val itcExpenses = state.expenses.filter { !it.isDeleted && it.gstAmount > 0 }
                     item {
@@ -256,7 +282,16 @@ fun FinancialReportsScreen(
         ) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val tabs = listOf("overview" to "Overview", "pnl" to "P&L", "bs" to "Balance Sheet", "tb" to "Trial Balance", "cf" to "Cash Flow", "aging" to "Aging")
+                    val tabs = listOf(
+                        "overview" to "Overview",
+                        "pnl" to "P&L",
+                        "bs" to "Balance Sheet",
+                        "tb" to "Trial Balance",
+                        "cf" to "Cash Flow",
+                        "aging" to "Aging",
+                        "clients" to "Client Sales",
+                        "margins" to "Item Margins"
+                    )
                     items(tabs) { (k, lbl) ->
                         FilterChip(
                             selected = tab == k,
@@ -313,6 +348,24 @@ fun FinancialReportsScreen(
                                 SummaryRow("0 – 30 Days", FormatUtils.inr(s.aging0To30))
                                 SummaryRow("31 – 60 Days", FormatUtils.inr(s.aging31To60), WarningAmber)
                                 SummaryRow("60+ Days Overdue", FormatUtils.inr(s.aging60Plus), DangerRed)
+                            }
+                            "clients" -> {
+                                Text("Top Client Revenue", style = MaterialTheme.typography.titleMedium)
+                                val byClient = state.invoices.filter { !it.isDeleted && it.status == "final" && it.docType == "invoice" }
+                                    .groupBy { it.clientName.ifBlank { "Walk-in" } }
+                                    .mapValues { (_, list) -> list.sumOf { it.grandTotal } }
+                                    .entries.sortedByDescending { it.value }.take(8)
+                                if (byClient.isEmpty()) Text("No sales yet.", style = MaterialTheme.typography.bodySmall)
+                                byClient.forEach { (name, amt) -> SummaryRow(name, FormatUtils.inr(amt), TealPrimary) }
+                            }
+                            "margins" -> {
+                                Text("Product Profit Margins", style = MaterialTheme.typography.titleMedium)
+                                val prods = state.products.filter { !it.isDeleted && it.sellingPrice > 0 && it.costPrice > 0 }
+                                if (prods.isEmpty()) Text("Add cost & selling prices to products to view margins.", style = MaterialTheme.typography.bodySmall)
+                                prods.take(8).forEach { p ->
+                                    val marginPct = (((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100).toInt()
+                                    SummaryRow("${p.name} ($marginPct%)", FormatUtils.inr(p.sellingPrice - p.costPrice), EmeraldAccent)
+                                }
                             }
                         }
                     }

@@ -106,7 +106,8 @@ fun BusinessToolsScreen(
                         "warranty" to "Warranties & AMC",
                         "reminders" to "Reminders",
                         "autopo" to "Low-Stock PO",
-                        "bank" to "Bank Reconcile"
+                        "bank" to "Bank Reconcile",
+                        "calc" to "Margin & EMI"
                     )
                     items(tabs) { (k, lbl) ->
                         FilterChip(
@@ -135,6 +136,8 @@ fun BusinessToolsScreen(
                                     Text(rec.clientName, style = MaterialTheme.typography.titleMedium)
                                     Text("${rec.frequency.uppercase()} • ${FormatUtils.inr(rec.totalAmount)} • Next: ${rec.nextRunDate}", style = MaterialTheme.typography.bodySmall)
                                 }
+                                Switch(checked = rec.isActive, onCheckedChange = { onSaveRecurring(rec.copy(isActive = it)) })
+                                Spacer(Modifier.width(6.dp))
                                 Button(
                                     onClick = {
                                         val invNo = "${state.settings.invoicePrefix}-${state.settings.nextInvoiceNumber.toString().padStart(3, '0')}"
@@ -171,11 +174,12 @@ fun BusinessToolsScreen(
                         }
                     }
                     items(state.warranties, key = { it.id }) { w ->
+                        val expDate = FormatUtils.addMonthsToDateStr(w.startDate, w.months.toInt())
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column {
+                                Column(Modifier.weight(1f)) {
                                     Text("${w.productName} (${w.serialNo.ifBlank { "No SN" }})", style = MaterialTheme.typography.titleSmall)
-                                    Text("${w.clientName} • Start ${w.startDate}", style = MaterialTheme.typography.bodySmall)
+                                    Text("${w.clientName} • ${w.startDate} → $expDate", style = MaterialTheme.typography.bodySmall)
                                 }
                                 ErpStatusBadge("${w.months}m ${w.type.uppercase()}", SuccessSoft, SuccessGreen)
                             }
@@ -271,6 +275,52 @@ fun BusinessToolsScreen(
                         }
                     }
                 }
+
+                "calc" -> {
+                    item {
+                        var costStr by remember { mutableStateOf("500") }
+                        var sellStr by remember { mutableStateOf("750") }
+                        val cost = costStr.toDoubleOrNull() ?: 0.0
+                        val sell = sellStr.toDoubleOrNull() ?: 0.0
+                        val profit = sell - cost
+                        val marginPct = if (sell > 0) (profit / sell) * 100.0 else 0.0
+                        val markupPct = if (cost > 0) (profit / cost) * 100.0 else 0.0
+                        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Margin & Markup Calculator", style = MaterialTheme.typography.titleMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(value = costStr, onValueChange = { costStr = it }, label = { Text("Cost Price ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                                    OutlinedTextField(value = sellStr, onValueChange = { sellStr = it }, label = { Text("Selling Price ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                                }
+                                Text("Profit: ${FormatUtils.inr(profit)}  •  Margin: ${String.format("%.1f", marginPct)}%  •  Markup: ${String.format("%.1f", markupPct)}%", style = MaterialTheme.typography.titleSmall, color = TealPrimary)
+                            }
+                        }
+                    }
+                    item {
+                        var principalStr by remember { mutableStateOf("100000") }
+                        var rateStr by remember { mutableStateOf("12") }
+                        var tenureStr by remember { mutableStateOf("12") }
+                        val p = principalStr.toDoubleOrNull() ?: 0.0
+                        val r = (rateStr.toDoubleOrNull() ?: 0.0) / 12.0 / 100.0
+                        val n = (tenureStr.toIntOrNull() ?: 12).coerceAtLeast(1)
+                        val emi = if (r > 0 && p > 0) {
+                            val factor = Math.pow(1 + r, n.toDouble())
+                            (p * r * factor) / (factor - 1.0)
+                        } else if (p > 0) p / n else 0.0
+                        val totalPayable = emi * n
+                        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Business Loan / EMI Calculator", style = MaterialTheme.typography.titleMedium)
+                                OutlinedTextField(value = principalStr, onValueChange = { principalStr = it }, label = { Text("Loan Principal ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(value = rateStr, onValueChange = { rateStr = it }, label = { Text("Interest % p.a.") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                                    OutlinedTextField(value = tenureStr, onValueChange = { tenureStr = it }, label = { Text("Months") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
+                                }
+                                Text("Monthly EMI: ${FormatUtils.inr(emi)}  •  Total Interest: ${FormatUtils.inr((totalPayable - p).coerceAtLeast(0.0))}", style = MaterialTheme.typography.titleSmall, color = EmeraldAccent)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -341,7 +391,8 @@ fun WebsiteStoreScreen(
     onSaveSettings: (BusinessSettings) -> Unit,
     onSaveProduct: (ErpProduct) -> Unit,
     onSaveCoupon: (ErpCoupon) -> Unit,
-    onSaveOrder: (ErpOnlineOrder) -> Unit
+    onSaveOrder: (ErpOnlineOrder) -> Unit,
+    onConvertOrderToInvoice: (ErpInvoice) -> Unit = {}
 ) {
     var tab by remember { mutableStateOf("setup") }
     var storeEnabled by remember(state.settings) { mutableStateOf(state.settings.storeEnabled) }
@@ -349,6 +400,7 @@ fun WebsiteStoreScreen(
     var tagline by remember(state.settings) { mutableStateOf(state.settings.storeTagline) }
     var waPhone by remember(state.settings) { mutableStateOf(state.settings.whatsappOrderPhone) }
     var showAddCoupon by remember { mutableStateOf(false) }
+    var showAddOrder by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -381,6 +433,23 @@ fun WebsiteStoreScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
                                     modifier = Modifier.fillMaxWidth().height(50.dp)
                                 ) { Text("Save Store Settings") }
+                                val context = LocalContext.current
+                                OutlinedButton(
+                                    onClick = {
+                                        val storeProds = state.products.filter { !it.isDeleted && it.showInStore }.take(10)
+                                        val catalogMsg = buildString {
+                                            appendLine("*${state.settings.businessName}* — ${tagline.ifBlank { "Online Catalog" }}")
+                                            storeProds.forEach { appendLine("• ${it.name}: ${FormatUtils.inr(it.sellingPrice)}") }
+                                            if (waPhone.isNotBlank()) appendLine("Order on WhatsApp: $waPhone")
+                                        }
+                                        FormatUtils.shareText(context, "${state.settings.businessName} Catalog", catalogMsg)
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Share Store Catalog")
+                                }
                             }
                         }
                     }
@@ -419,6 +488,13 @@ fun WebsiteStoreScreen(
                     }
                 }
                 "orders" -> {
+                    item {
+                        Button(onClick = { showAddOrder = true }, colors = ButtonDefaults.buttonColors(containerColor = TealPrimary), modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Record WhatsApp / Store Order")
+                        }
+                    }
                     items(state.onlineOrders, key = { it.id }) { ord ->
                         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -427,9 +503,30 @@ fun WebsiteStoreScreen(
                                     Text(FormatUtils.inr(ord.totalAmount), style = MaterialTheme.typography.titleSmall, color = TealPrimary)
                                 }
                                 Text("${ord.itemsSummary}\n${ord.customerPhone}", style = MaterialTheme.typography.bodySmall)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                     listOf("accepted", "completed", "cancelled").forEach { st ->
                                         FilterChip(selected = ord.status == st, onClick = { onSaveOrder(ord.copy(status = st)) }, label = { Text(st.uppercase()) })
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    if (ord.status != "cancelled") {
+                                        OutlinedButton(onClick = {
+                                            val invNo = "${state.settings.invoicePrefix}-${state.settings.nextInvoiceNumber.toString().padStart(3, '0')}"
+                                            onConvertOrderToInvoice(
+                                                ErpInvoice(
+                                                    invoiceNumber = invNo,
+                                                    clientName = ord.customerName,
+                                                    clientPhone = ord.customerPhone,
+                                                    dateStr = FormatUtils.todayStr(),
+                                                    subtotal = ord.totalAmount,
+                                                    grandTotal = ord.totalAmount,
+                                                    paidAmount = ord.totalAmount,
+                                                    paymentMode = "upi",
+                                                    notes = "Online Order: ${ord.itemsSummary}",
+                                                    items = listOf(InvoiceLineItem(name = ord.itemsSummary.ifBlank { "Store Order" }, qty = 1.0, rate = ord.totalAmount, gstPercent = 0.0))
+                                                )
+                                            )
+                                            onSaveOrder(ord.copy(status = "completed"))
+                                        }) { Text("Bill") }
                                     }
                                 }
                             }
@@ -459,6 +556,41 @@ fun WebsiteStoreScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) { Text("Save Coupon") }
+            }
+        }
+    }
+
+    if (showAddOrder) {
+        var cName by remember { mutableStateOf("") }
+        var cPhone by remember { mutableStateOf("") }
+        var itemsSummary by remember { mutableStateOf("") }
+        var amtStr by remember { mutableStateOf("") }
+        ModalBottomSheet(onDismissRequest = { showAddOrder = false }) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Record Store / WhatsApp Order", style = MaterialTheme.typography.headlineSmall)
+                OutlinedTextField(value = cName, onValueChange = { cName = it }, label = { Text("Customer Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = cPhone, onValueChange = { cPhone = it }, label = { Text("Phone") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = itemsSummary, onValueChange = { itemsSummary = it }, label = { Text("Items Ordered *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = amtStr, onValueChange = { amtStr = it }, label = { Text("Order Total ₹ *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(
+                    onClick = {
+                        if (cName.isNotBlank() && itemsSummary.isNotBlank()) {
+                            onSaveOrder(
+                                ErpOnlineOrder(
+                                    customerName = cName.trim(),
+                                    customerPhone = cPhone.trim(),
+                                    itemsSummary = itemsSummary.trim(),
+                                    totalAmount = amtStr.toDoubleOrNull() ?: 0.0,
+                                    status = "accepted"
+                                )
+                            )
+                            showAddOrder = false
+                        }
+                    },
+                    enabled = cName.isNotBlank() && itemsSummary.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) { Text("Save Order") }
             }
         }
     }

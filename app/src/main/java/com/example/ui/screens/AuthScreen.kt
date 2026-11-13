@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,8 +63,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -253,18 +256,17 @@ fun AuthScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center
+            Surface(
+                modifier = Modifier.size(84.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFFFEFFFF),
+                shadowElevation = 6.dp
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                Image(
+                    painter = painterResource(id = R.drawable.app_brand_logo),
                     contentDescription = "My Business ERP Logo",
-                    tint = TealMint,
-                    modifier = Modifier.size(34.dp)
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(6.dp)
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))

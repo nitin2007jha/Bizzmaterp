@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -79,20 +80,29 @@ fun ClientsScreen(
 ) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
+    var filterMode by remember { mutableStateOf("all") }
     var selectedClient by remember { mutableStateOf<ErpClient?>(null) }
     var editingClient by remember { mutableStateOf<ErpClient?>(null) }
-
-    val clients = remember(state.clients, query) {
-        val q = query.trim().lowercase()
-        state.clients.filter { !it.isDeleted }
-            .filter { q.isBlank() || it.name.lowercase().contains(q) || it.phone.contains(q) || it.gstin.lowercase().contains(q) }
-    }
 
     fun clientBalance(cli: ErpClient): Double {
         val unpaidInv = state.invoices
             .filter { !it.isDeleted && it.status == "final" && it.paymentStatus != "paid" && (it.clientId == cli.id || it.clientName.equals(cli.name, ignoreCase = true)) }
             .sumOf { (it.grandTotal - it.paidAmount).coerceAtLeast(0.0) }
         return cli.openingBalance + unpaidInv
+    }
+
+    val clients = remember(state.clients, state.invoices, query, filterMode) {
+        val q = query.trim().lowercase()
+        state.clients.filter { !it.isDeleted }
+            .filter { cli ->
+                val bal = clientBalance(cli)
+                when (filterMode) {
+                    "due" -> bal > 0.0
+                    "settled" -> bal <= 0.0
+                    else -> true
+                }
+            }
+            .filter { q.isBlank() || it.name.lowercase().contains(q) || it.phone.contains(q) || it.gstin.lowercase().contains(q) }
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -122,6 +132,25 @@ fun ClientsScreen(
                 }
             }
 
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("all" to "All Clients", "due" to "Balance Due", "settled" to "Settled")) { (k, lbl) ->
+                    FilterChip(
+                        selected = filterMode == k,
+                        onClick = { filterMode = k },
+                        label = { Text(lbl) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                    )
+                }
+            }
+
+            val totalDue = remember(clients) { clients.sumOf { clientBalance(it).coerceAtLeast(0.0) } }
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("${clients.size} Active Clients", style = MaterialTheme.typography.titleSmall)
+                    Text("Total Due: ${FormatUtils.inr(totalDue)}", style = MaterialTheme.typography.titleSmall, color = if (totalDue > 0) WarningAmber else SuccessGreen)
+                }
+            }
+
             if (clients.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text("No clients yet. Tap + Client to add parties to your CRM.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -134,6 +163,7 @@ fun ClientsScreen(
                 ) {
                     items(clients, key = { it.id }) { cli ->
                         val bal = clientBalance(cli)
+                        val overLimit = cli.creditLimit > 0 && bal > cli.creditLimit
                         SwipeActionCard(
                             onSwipeRight = { editingClient = cli },
                             rightLabel = "Edit",
@@ -154,8 +184,12 @@ fun ClientsScreen(
                                         Text(listOfNotNull(cli.phone.takeIf { it.isNotBlank() }, cli.gstin.takeIf { it.isNotBlank() }).joinToString(" • ").ifBlank { "No phone added" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(FormatUtils.inr(bal), style = MaterialTheme.typography.titleSmall, color = if (bal > 0) WarningAmber else SuccessGreen)
-                                        ErpStatusBadge(if (bal > 0) "DUE" else "SETTLED", if (bal > 0) WarningSoft else SuccessSoft, if (bal > 0) WarningAmber else SuccessGreen)
+                                        Text(FormatUtils.inr(bal), style = MaterialTheme.typography.titleSmall, color = if (overLimit) DangerRed else if (bal > 0) WarningAmber else SuccessGreen)
+                                        ErpStatusBadge(
+                                            if (overLimit) "OVER LIMIT" else if (bal > 0) "DUE" else "SETTLED",
+                                            if (overLimit) DangerSoft else if (bal > 0) WarningSoft else SuccessSoft,
+                                            if (overLimit) DangerRed else if (bal > 0) WarningAmber else SuccessGreen
+                                        )
                                     }
                                 }
                             }
@@ -220,7 +254,9 @@ private fun ClientEditorSheet(initial: ErpClient, onDismiss: () -> Unit, onSave:
     var phone by remember { mutableStateOf(initial.phone) }
     var email by remember { mutableStateOf(initial.email) }
     var gstin by remember { mutableStateOf(initial.gstin) }
+    var stateName by remember { mutableStateOf(initial.state) }
     var address by remember { mutableStateOf(initial.address) }
+    var notes by remember { mutableStateOf(initial.notes) }
     var opening by remember { mutableStateOf(if (initial.openingBalance != 0.0) initial.openingBalance.toString() else "") }
     var creditLimit by remember { mutableStateOf(if (initial.creditLimit > 0) initial.creditLimit.toString() else "") }
 
@@ -232,16 +268,20 @@ private fun ClientEditorSheet(initial: ErpClient, onDismiss: () -> Unit, onSave:
                 OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), singleLine = true, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = gstin, onValueChange = { gstin = it.uppercase() }, label = { Text("GSTIN") }, singleLine = true, modifier = Modifier.weight(1f))
             }
-            OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.weight(1.2f))
+                OutlinedTextField(value = stateName, onValueChange = { stateName = it }, label = { Text("State") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
             OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = opening, onValueChange = { opening = it }, label = { Text("Opening Bal ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = creditLimit, onValueChange = { creditLimit = it }, label = { Text("Credit Limit ₹") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
             }
+            OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onSave(initial.copy(name = name.trim(), phone = phone.trim(), email = email.trim(), gstin = gstin.trim(), address = address.trim(), openingBalance = opening.toDoubleOrNull() ?: 0.0, creditLimit = creditLimit.toDoubleOrNull() ?: 0.0))
+                        onSave(initial.copy(name = name.trim(), phone = phone.trim(), email = email.trim(), gstin = gstin.trim(), state = stateName.trim(), address = address.trim(), notes = notes.trim(), openingBalance = opening.toDoubleOrNull() ?: 0.0, creditLimit = creditLimit.toDoubleOrNull() ?: 0.0))
                     }
                 },
                 enabled = name.isNotBlank(),
@@ -255,8 +295,13 @@ private fun ClientEditorSheet(initial: ErpClient, onDismiss: () -> Unit, onSave:
 private data class DaybookEntry(val dateStr: String, val title: String, val subtitle: String, val amount: Double, val isCredit: Boolean)
 
 @Composable
-fun DaybookScreen(state: ErpUiState) {
-    val entries = remember(state.invoices, state.expenses) {
+fun DaybookScreen(
+    state: ErpUiState,
+    onExportMessage: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    var typeFilter by remember { mutableStateOf("all") }
+    val allEntries = remember(state.invoices, state.expenses) {
         val rev = state.invoices.filter { !it.isDeleted && it.status == "final" && it.docType == "invoice" }.map {
             DaybookEntry(it.dateStr, "Sale ${it.invoiceNumber}", "${it.clientName.ifBlank { "Walk-in" }} • ${it.paymentMode.uppercase()}", it.grandTotal, true)
         }
@@ -265,23 +310,61 @@ fun DaybookScreen(state: ErpUiState) {
         }
         (rev + exp).sortedByDescending { it.dateStr }
     }
-    val cashIn = entries.filter { it.isCredit }.sumOf { it.amount }
-    val cashOut = entries.filter { !it.isCredit }.sumOf { it.amount }
+    val entries = remember(allEntries, typeFilter) {
+        when (typeFilter) {
+            "in" -> allEntries.filter { it.isCredit }
+            "out" -> allEntries.filter { !it.isCredit }
+            else -> allEntries
+        }
+    }
+    val cashIn = allEntries.filter { it.isCredit }.sumOf { it.amount }
+    val cashOut = allEntries.filter { !it.isCredit }.sumOf { it.amount }
+    val netFlow = cashIn - cashOut
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(modifier = Modifier.fillMaxSize().widthIn(max = 760.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = SuccessSoft)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Total Inflow", style = MaterialTheme.typography.labelSmall, color = SuccessGreen)
-                        Text(FormatUtils.inr(cashIn), style = MaterialTheme.typography.titleMedium, color = SuccessGreen)
+                    Column(Modifier.padding(10.dp)) {
+                        Text("Inflow", style = MaterialTheme.typography.labelSmall, color = SuccessGreen)
+                        Text(FormatUtils.inr(cashIn), style = MaterialTheme.typography.titleSmall, color = SuccessGreen)
                     }
                 }
                 Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = DangerSoft)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Total Outflow", style = MaterialTheme.typography.labelSmall, color = DangerRed)
-                        Text(FormatUtils.inr(cashOut), style = MaterialTheme.typography.titleMedium, color = DangerRed)
+                    Column(Modifier.padding(10.dp)) {
+                        Text("Outflow", style = MaterialTheme.typography.labelSmall, color = DangerRed)
+                        Text(FormatUtils.inr(cashOut), style = MaterialTheme.typography.titleSmall, color = DangerRed)
                     }
+                }
+                Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("Net Cash", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(FormatUtils.inr(netFlow), style = MaterialTheme.typography.titleSmall, color = if (netFlow >= 0) TealPrimary else DangerRed)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("all" to "All", "in" to "Inflow (+)", "out" to "Outflow (-)").forEach { (k, lbl) ->
+                        FilterChip(
+                            selected = typeFilter == k,
+                            onClick = { typeFilter = k },
+                            label = { Text(lbl) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White)
+                        )
+                    }
+                }
+                IconButton(onClick = {
+                    val csv = buildString {
+                        appendLine("Date,Type,Title,Details,Amount")
+                        entries.forEach { e ->
+                            appendLine("${e.dateStr},${if (e.isCredit) "IN" else "OUT"},\"${e.title}\",\"${e.subtitle}\",${e.amount}")
+                        }
+                    }
+                    FormatUtils.exportAndShareTextFile(context, "Daybook_${FormatUtils.todayStr()}.csv", "text/csv", csv)
+                        .onSuccess { onExportMessage("Daybook CSV exported") }
+                }) {
+                    Icon(Icons.Default.Download, contentDescription = "Export Daybook CSV", tint = TealPrimary)
                 }
             }
             LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

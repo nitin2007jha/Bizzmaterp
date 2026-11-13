@@ -25,9 +25,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -79,8 +81,11 @@ import com.example.ui.viewmodel.ErpUiState
 @Composable
 fun RecordsScreen(
     state: ErpUiState,
+    paperSize: String = "a4",
+    defaultTerms: String = "",
     onNewInvoice: () -> Unit,
     onEditInvoice: (ErpInvoice) -> Unit,
+    onDuplicateInvoice: (ErpInvoice) -> Unit = {},
     onMarkPaid: (ErpInvoice) -> Unit,
     onSoftDelete: (ErpInvoice) -> Unit,
     onSharePdfError: (String) -> Unit
@@ -276,12 +281,20 @@ fun RecordsScreen(
                 selectedInvoice = null
                 onEditInvoice(inv)
             },
+            onDuplicate = {
+                selectedInvoice = null
+                onDuplicateInvoice(inv)
+            },
             onDelete = {
                 onSoftDelete(inv)
                 selectedInvoice = null
             },
+            onPrint = {
+                FormatUtils.printInvoice(context, inv, state.settings, paperSize, defaultTerms)
+                    .onFailure { onSharePdfError(it.localizedMessage ?: "Print failed") }
+            },
             onExportPdf = {
-                FormatUtils.exportAndShareInvoicePdf(context, inv, state.settings)
+                FormatUtils.exportAndShareInvoicePdf(context, inv, state.settings, paperSize, defaultTerms)
                     .onFailure { onSharePdfError(it.localizedMessage ?: "PDF export failed") }
             },
             onShareReminder = {
@@ -302,7 +315,9 @@ fun InvoiceDetailSheet(
     onDismiss: () -> Unit,
     onMarkPaid: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    onPrint: () -> Unit,
     onExportPdf: () -> Unit,
     onShareReminder: () -> Unit
 ) {
@@ -416,12 +431,20 @@ fun InvoiceDetailSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = onExportPdf,
+                    onClick = onPrint,
                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    modifier = Modifier.weight(1f).testTag("invoice_detail_print_button")
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Print")
+                }
+                OutlinedButton(
+                    onClick = onExportPdf,
                     modifier = Modifier.weight(1f).testTag("invoice_detail_pdf_button")
                 ) {
                     Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("PDF")
                 }
                 OutlinedButton(
@@ -429,7 +452,7 @@ fun InvoiceDetailSheet(
                     modifier = Modifier.weight(1f).testTag("invoice_detail_share_button")
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Share")
                 }
             }
@@ -442,11 +465,11 @@ fun InvoiceDetailSheet(
                     Button(
                         onClick = onMarkPaid,
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldAccent),
-                        modifier = Modifier.weight(1f).testTag("invoice_detail_mark_paid_button")
+                        modifier = Modifier.weight(1.1f).testTag("invoice_detail_mark_paid_button")
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Mark Paid")
+                        Spacer(Modifier.width(4.dp))
+                        Text("Paid")
                     }
                 }
                 OutlinedButton(
@@ -454,8 +477,16 @@ fun InvoiceDetailSheet(
                     modifier = Modifier.weight(1f).testTag("invoice_detail_edit_button")
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Edit")
+                }
+                OutlinedButton(
+                    onClick = onDuplicate,
+                    modifier = Modifier.weight(1f).testTag("invoice_detail_duplicate_button")
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Clone")
                 }
                 TextButton(
                     onClick = onDelete,
