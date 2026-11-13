@@ -90,6 +90,7 @@ jobs:
       - name: Prepare signing keystores & optional secrets
         id: prep
         env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
@@ -97,7 +98,7 @@ jobs:
         run: |
           if [ ! -f debug.keystore ]; then
             if [ -f debug.keystore.base64 ]; then
-              base64 -d debug.keystore.base64 > debug.keystore
+              tr -d '\n\r ' < debug.keystore.base64 | base64 -d > debug.keystore
               echo "Decoded debug.keystore from debug.keystore.base64"
             else
               keytool -genkey -v \
@@ -113,11 +114,16 @@ jobs:
             fi
           fi
 
-          if [ ! -f app/google-services.json ] && [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
-            echo "Decoded app/google-services.json from secret"
-          elif [ ! -f app/google-services.json ]; then
-            echo "::notice::app/google-services.json not found in repo or GOOGLE_SERVICES_JSON_BASE64 secret. APK will compile cleanly, and adding GOOGLE_SERVICES_JSON_BASE64 enables Firebase & Google Sign-In in CI APKs."
+          if [ ! -f app/google-services.json ]; then
+            if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+              printf '%s\n' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+              echo "Wrote app/google-services.json from GOOGLE_SERVICES_JSON secret"
+            elif [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+              printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '\n\r ' | base64 -d > app/google-services.json
+              echo "Decoded app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret"
+            else
+              echo "::notice::app/google-services.json not found in repo or GOOGLE_SERVICES_JSON / GOOGLE_SERVICES_JSON_BASE64 secrets. APK will build and open cleanly, and adding the secret enables Firebase & Google Sign-In."
+            fi
           fi
 
           if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
@@ -264,6 +270,9 @@ jobs:
         if: ${{ always() }}
         run: |
           echo "### My Business ERP — APK Build Summary (${{ steps.prep.outputs.signing_mode }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -f app/google-services.json ]; then
+            echo "> ⚠️ **Warning:** \`app/google-services.json\` was not found during this build. Upload \`app/google-services.json\` to the repo (or paste its contents into the \`GOOGLE_SERVICES_JSON\` GitHub Actions secret) so Google Sign-In and Firebase Firestore work inside the APK." >> "$GITHUB_STEP_SUMMARY"
+          fi
           for apk in app/build/outputs/apk/*/*.apk app/build/outputs/bundle/*/*.aab; do
             if [ -f "$apk" ]; then
               size=$(du -h "$apk" | cut -f1)

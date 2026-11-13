@@ -114,26 +114,38 @@ private fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        configureAppCheck(this, intent)
+        val firebaseReady = configureAppCheck(this, intent)
         enableEdgeToEdge()
 
         setContent {
-            val user by remember { Firebase.auth.authStateFlow() }
-                .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
-            var pendingOnboarding by remember { mutableStateOf<BusinessSettings?>(null) }
-
-            val currentUser = user
-            if (currentUser == null) {
+            if (!firebaseReady) {
                 MyBusinessErpTheme(darkModeSetting = "light") {
-                    AuthScreen(onAuthSuccess = { draft -> pendingOnboarding = draft })
+                    AuthScreen(
+                        onAuthSuccess = {},
+                        firebaseConfigured = false
+                    )
                 }
             } else {
-                key(currentUser.uid) {
-                    MainErpApp(
-                        user = currentUser,
-                        pendingOnboarding = pendingOnboarding,
-                        onClearPendingOnboarding = { pendingOnboarding = null }
-                    )
+                val user by remember { Firebase.auth.authStateFlow() }
+                    .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+                var pendingOnboarding by remember { mutableStateOf<BusinessSettings?>(null) }
+
+                val currentUser = user
+                if (currentUser == null) {
+                    MyBusinessErpTheme(darkModeSetting = "light") {
+                        AuthScreen(
+                            onAuthSuccess = { draft -> pendingOnboarding = draft },
+                            firebaseConfigured = true
+                        )
+                    }
+                } else {
+                    key(currentUser.uid) {
+                        MainErpApp(
+                            user = currentUser,
+                            pendingOnboarding = pendingOnboarding,
+                            onClearPendingOnboarding = { pendingOnboarding = null }
+                        )
+                    }
                 }
             }
         }

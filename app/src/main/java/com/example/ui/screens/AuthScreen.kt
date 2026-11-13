@@ -79,6 +79,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.core.ensureFirebaseInitialized
 import com.example.data.model.BusinessSettings
 import com.example.ui.theme.EmeraldAccent
 import com.example.ui.theme.TealDark
@@ -117,6 +118,10 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
+    if (!ensureFirebaseInitialized(context)) {
+        onUnauthenticated()
+        return
+    }
     if (Firebase.auth.currentUser != null) {
         onAuthSuccess()
         return
@@ -163,9 +168,13 @@ fun onGoogleSignInClicked(
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
+    if (!ensureFirebaseInitialized(context)) {
+        onAuthError("Firebase is not configured in this APK build (missing google-services.json). Add app/google-services.json or the GOOGLE_SERVICES_JSON GitHub secret and rebuild.")
+        return
+    }
     val clientId = resolveDefaultWebClientId(context)
     if (clientId == null) {
-        onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+        onAuthError("Google Sign-In configuration missing: default_web_client_id not found. Check app/google-services.json and rebuild.")
         return
     }
 
@@ -206,7 +215,7 @@ fun signOutFromErp(
             } catch (e: Exception) {
                 Log.w(AUTH_TAG, "Failed to clear credential state: ${e.message}")
             } finally {
-                Firebase.auth.signOut()
+                runCatching { Firebase.auth.signOut() }
                 onSignOutComplete()
             }
         }
@@ -215,7 +224,8 @@ fun signOutFromErp(
 
 @Composable
 fun AuthScreen(
-    onAuthSuccess: (BusinessSettings?) -> Unit
+    onAuthSuccess: (BusinessSettings?) -> Unit,
+    firebaseConfigured: Boolean = true
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -241,14 +251,16 @@ fun AuthScreen(
     var accountNo by remember { mutableStateOf("") }
     var ifsc by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = { onAuthSuccess(null) },
-            onUnauthenticated = {},
-            scope = scope
-        )
+    LaunchedEffect(firebaseConfigured) {
+        if (firebaseConfigured) {
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = { onAuthSuccess(null) },
+                onUnauthenticated = {},
+                scope = scope
+            )
+        }
     }
 
     Box(
@@ -322,6 +334,13 @@ fun AuthScreen(
                             label = { Text("Create Account") },
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TealPrimary, selectedLabelColor = Color.White),
                             modifier = Modifier.weight(1f).testTag("auth_tab_create")
+                        )
+                    }
+
+                    if (!firebaseConfigured) {
+                        ErrorBanner(
+                            "Firebase is not configured in this APK build (missing google-services.json). " +
+                                "Upload app/google-services.json to GitHub or add the GOOGLE_SERVICES_JSON secret and rebuild to enable Sign-In."
                         )
                     }
 

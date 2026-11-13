@@ -15,12 +15,26 @@ private const val DEBUG_STORE_PREFIX = "com.google.firebase.appcheck.debug.store
 private const val DEBUG_SECRET_KEY = "com.google.firebase.appcheck.debug.DEBUG_SECRET"
 private const val RECAPTCHA_SITE_KEY_RES = "recaptcha_site_key"
 
-fun configureAppCheck(context: Context, intent: Intent?) {
-    try {
-        if (FirebaseApp.getApps(context).isEmpty()) {
-            FirebaseApp.initializeApp(context)
+fun ensureFirebaseInitialized(context: Context): Boolean {
+    return try {
+        val appContext = context.applicationContext ?: context
+        if (FirebaseApp.getApps(appContext).isNotEmpty()) {
+            true
+        } else {
+            FirebaseApp.initializeApp(appContext) != null
         }
+    } catch (e: Exception) {
+        Log.e(TAG, "FirebaseApp initialization failed (missing google-services.json?)", e)
+        false
+    }
+}
 
+fun configureAppCheck(context: Context, intent: Intent?): Boolean {
+    if (!ensureFirebaseInitialized(context)) {
+        Log.w(TAG, "Skipping App Check setup: default FirebaseApp is not initialized.")
+        return false
+    }
+    try {
         if (BuildConfig.DEBUG) {
             val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)
             if (!debugToken.isNullOrEmpty()) {
@@ -64,4 +78,5 @@ fun configureAppCheck(context: Context, intent: Intent?) {
     } catch (e: Exception) {
         Log.e(TAG, "Failed to initialize Firebase App Check", e)
     }
+    return true
 }
