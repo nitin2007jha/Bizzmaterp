@@ -49,7 +49,7 @@ jobs:
 
       - name: Configure preinstalled Android SDK & accept licenses
         run: |
-          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
           sudo chown -R "$(id -u):$(id -g)" "$SDK_DIR" || true
@@ -58,16 +58,34 @@ jobs:
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$SDK_DIR/licenses/android-sdk-preview-license"
           printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6" > "$SDK_DIR/licenses/android-googletv-license"
           printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > "$SDK_DIR/licenses/google-gdk-license"
-          SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
-          if [ -x "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-            "$SDKMANAGER" --install "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || "$SDKMANAGER" --install "platform-tools" "build-tools;36.0.0" "platforms;android-36"
+
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" \
+            "$(command -v sdkmanager || true)" \
+            $(find "$SDK_DIR/cmdline-tools" -maxdepth 3 -name sdkmanager 2>/dev/null || true); do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$SDKMANAGER" ]; then
+            echo "Using sdkmanager: $SDKMANAGER"
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install "platform-tools" "build-tools;36.0.0" "platforms;android-36"
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install "platforms;android-36.1" || true
+          else
+            echo "::warning::sdkmanager not found under $SDK_DIR; using preinstalled SDK packages"
           fi
+          echo "Installed platforms:" && ls -la "$SDK_DIR/platforms" || true
+          echo "Installed build-tools:" && ls -la "$SDK_DIR/build-tools" || true
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
+          cache-disabled: true
 
       - name: Prepare signing keystores & optional secrets
         id: prep
@@ -123,12 +141,31 @@ jobs:
             echo "::notice::Using CI fallback upload keystore for release build. Add RELEASE_KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD secrets for Play Store production signing."
           fi
 
+          ls -la debug.keystore my-upload-key.jks app/google-services.json || true
+
       - name: Build Debug APK
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
         run: |
           GRADLE_CMD="gradle"
           if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
-          "$GRADLE_CMD" assembleDebug --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          set +e
+          "$GRADLE_CMD" assembleDebug \
+            --no-daemon \
+            --no-configuration-cache \
+            --no-build-cache \
+            --no-parallel \
+            --max-workers=2 \
+            --console=plain \
+            -Dkotlin.compiler.execution.strategy=daemon \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8" \
+            2>&1 | tee /tmp/gradle-debug.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "=== CONCISE FAILURE SUMMARY ==="
+            grep -n -C 8 -E "(^> Task .* FAILED|^\* What went wrong:|Caused by:|Execution failed|Could not |FAILURE:)" /tmp/gradle-debug.log | head -n 80 || true
+            exit "$EXIT_CODE"
+          fi
 
       - name: Upload Debug APK artifact
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' || inputs.build_type == 'both' }}
@@ -148,7 +185,24 @@ jobs:
         run: |
           GRADLE_CMD="gradle"
           if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
-          "$GRADLE_CMD" assembleRelease --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          set +e
+          "$GRADLE_CMD" assembleRelease \
+            --no-daemon \
+            --no-configuration-cache \
+            --no-build-cache \
+            --no-parallel \
+            --max-workers=2 \
+            --console=plain \
+            -Dkotlin.compiler.execution.strategy=daemon \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8" \
+            2>&1 | tee /tmp/gradle-release.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "=== CONCISE FAILURE SUMMARY ==="
+            grep -n -C 8 -E "(^> Task .* FAILED|^\* What went wrong:|Caused by:|Execution failed|Could not |FAILURE:)" /tmp/gradle-release.log | head -n 80 || true
+            exit "$EXIT_CODE"
+          fi
 
       - name: Upload Release APK artifact
         if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'both')) }}
@@ -168,7 +222,24 @@ jobs:
         run: |
           GRADLE_CMD="gradle"
           if [ -x ./gradlew ]; then GRADLE_CMD="./gradlew"; fi
-          "$GRADLE_CMD" bundleRelease --no-daemon --no-configuration-cache --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          set +e
+          "$GRADLE_CMD" bundleRelease \
+            --no-daemon \
+            --no-configuration-cache \
+            --no-build-cache \
+            --no-parallel \
+            --max-workers=2 \
+            --console=plain \
+            -Dkotlin.compiler.execution.strategy=daemon \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8" \
+            2>&1 | tee /tmp/gradle-bundle.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "=== CONCISE FAILURE SUMMARY ==="
+            grep -n -C 8 -E "(^> Task .* FAILED|^\* What went wrong:|Caused by:|Execution failed|Could not |FAILURE:)" /tmp/gradle-bundle.log | head -n 80 || true
+            exit "$EXIT_CODE"
+          fi
 
       - name: Upload App Bundle (.aab) artifact
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_aab == true }}
